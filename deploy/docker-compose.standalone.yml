@@ -1,0 +1,176 @@
+# pacod-aggregator's own stack, standalone: its copies of the shared components, under their shared
+# names (pacod-demo/docs/NETWORK.md). Loaded together with docker-compose.yml by "make up". The full
+# stack (pacod-demo) does not load this file: it runs one of each shared component for every
+# product.
+#
+#   pacod-postgres, pacod-db-init   the aggregator's role and database (platform/postgres)
+#   pacod-id, pacod-mailpit         sign-in; realm "aggregator" (deploy/pacod-id/pacod-id.toml)
+#   pacod-caddy                     the console and the catalogue (platform/caddy/agg.caddy)
+#   pacod-prometheus, pacod-grafana its metrics, alerts and dashboard
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  pacod-postgres:
+    image: postgres:18.6-alpine3.24
+    container_name: pacod-postgres
+    logging: *logging
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - pacod-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+      start_interval: 1s
+    networks: [pacod-net]
+
+  # Each product's role and database, at every start (idempotent): the aggregator's
+  # (platform/postgres/agg-db.sh) and pacod-id's, from the vendored copy. The client is the
+  # server's own image (\getenv needs psql 15+).
+  pacod-db-init:
+    image: postgres:18.6-alpine3.24
+    container_name: pacod-db-init
+    logging: *logging
+    depends_on:
+      pacod-postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: pacod-postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-}
+      AGG_DB_PASSWORD: ${AGG_DB_PASSWORD:-}
+      PID_DB_PASSWORD: ${PID_DB_PASSWORD:-}
+    volumes:
+      - ../vendor/pacod-id/platform/postgres/id-db.sh:/initdb.d/id/id-db.sh:ro
+      - ../platform/postgres:/initdb.d/agg:ro
+    entrypoint: ["sh", "-c", "set -e; for f in /initdb.d/*/*-db.sh; do sh \"$$f\"; done"]
+    networks: [pacod-net]
+    restart: "no"
+
+  pacod-id:
+    # Built from vendor/pacod-id by "make images"; not pacod-id:dev, which pacod-gw builds from its
+    # own vendored copy.
+    image: ${PACOD_ID_IMAGE:-pacod-agg-id:dev}
+    build:
+      context: ../vendor/pacod-id
+      dockerfile: deploy/docker/pacod-id.Dockerfile
+      target: pacod-id
+    container_name: pacod-id
+    logging: *logging
+    restart: unless-stopped
+    depends_on:
+      pacod-db-init:
+        condition: service_completed_successfully
+      pacod-mailpit:
+        condition: service_started
+    environment:
+      PID_DATABASE_URL: postgres://pacod_id:${PID_DB_PASSWORD:-}@pacod-postgres:5432/pacod_id
+      PID_KEK: ${PID_KEK:-}
+      PID_TOKEN_PEPPER: ${PID_TOKEN_PEPPER:-}
+      AGG_ID_CLIENT_SECRET: ${AGG_ID_CLIENT_SECRET:-}
+      AGG_UI_CLIENT_SECRET: ${AGG_UI_CLIENT_SECRET:-}
+      # The issuer is the address browsers use; pacod-id answers its sign-in pages only on that
+      # exact host and port.
+      AGG_ID_ISSUER: ${AGG_ID_ISSUER:-http://127.0.0.1:18372}
+      AGG_ORIGIN: ${AGG_ORIGIN:-http://localhost:13150}
+      PID_TRUSTED_PROXIES: ${PID_TRUSTED_PROXIES:-}
+      # The first account, created once: an identity admin and aggregator admin.
+      PID_BOOTSTRAP_ADMIN_EMAIL: ${ID_ADMIN_EMAIL:-admin@pacod-aggregator.test}
+      PID_BOOTSTRAP_ADMIN_PASSWORD: ${ID_ADMIN_PASSWORD:-}
+      PID_BOOTSTRAP_ADMIN_REALM: aggregator
+      PID_BOOTSTRAP_ADMIN_ROLES: id.admin,agg.admin
+      PID_SMTP_HOST: ${PID_SMTP_HOST:-pacod-mailpit}
+      PID_SMTP_PORT: ${PID_SMTP_PORT:-1025}
+      PID_SMTP_TLS: ${PID_SMTP_TLS:-none}
+      PID_EMAIL_FROM_ADDRESS: ${ID_MAIL_FROM:-id@pacod-aggregator.test}
+      PID_EMAIL_FROM_NAME: pacod-aggregator
+      PID_LOG: ${PID_LOG:-info,sqlx=warn}
+      PID_LOG_FORMAT: ${PID_LOG_FORMAT:-text}
+      # Its address on pacod-admin-net alone: on 0.0.0.0 all of pacod-net would reach it.
+      PID_INTERNAL_LISTEN: pacod-id-internal:8071
+    volumes:
+      - ./pacod-id/pacod-id.toml:/etc/pacod-id/pacod-id.toml:ro
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    ports:
+      - "127.0.0.1:${AGG_ID_PORT:-18372}:8070"
+    networks:
+      pacod-net:
+      pacod-admin-net:
+        aliases: [pacod-id-internal]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck", "http://127.0.0.1:9170/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+      start_interval: 1s
+
+  # Every mail pacod-id sends (invitations, resets) ends here: http://127.0.0.1:18326/
+  pacod-mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: pacod-mailpit
+    logging: *logging
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AGG_MAILPIT_PORT:-18326}:8025"
+    networks: [pacod-net]
+
+  pacod-caddy:
+    image: caddy:2.11.6-alpine
+    container_name: pacod-caddy
+    logging: *logging
+    restart: unless-stopped
+    environment:
+      AGG_SITE: ${AGG_SITE:-http://localhost:13150}
+      AGG_API_SITE: ${AGG_API_SITE:-http://localhost:13151}
+      AGG_CADDY_LOG_FORMAT: ${AGG_CADDY_LOG_FORMAT:-console}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../platform/caddy:/etc/caddy/sites:ro
+      - pacod-caddy-data:/data
+    ports:
+      - "127.0.0.1:${AGG_UI_PORT:-13150}:13150"
+      - "127.0.0.1:${AGG_API_PORT:-13151}:13151"
+    networks: [pacod-net]
+
+  pacod-prometheus:
+    image: prom/prometheus:v3.15.0
+    container_name: pacod-prometheus
+    logging: *logging
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../platform/prometheus/agg.yml:/etc/prometheus/scrape.d/agg.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules/agg:ro
+    ports: ["127.0.0.1:${AGG_PROMETHEUS_PORT:-19091}:9090"]
+    networks: [pacod-net]
+
+  pacod-grafana:
+    image: grafana/grafana:13.2.3
+    container_name: pacod-grafana
+    logging: *logging
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/agg/agg-overview.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards/agg:ro
+    ports: ["127.0.0.1:${AGG_GRAFANA_PORT:-13002}:3000"]
+    networks: [pacod-net]
+
+volumes:
+  pacod-postgres-data:
+  pacod-caddy-data:

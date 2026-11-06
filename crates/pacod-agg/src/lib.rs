@@ -88,15 +88,23 @@ async fn bind(what: &str, addr: &str) -> anyhow::Result<TcpListener> {
     Err(anyhow::anyhow!("{what} {addr}: {}", last.map_or("no address".into(), |e| e.to_string())))
 }
 
-/// Housekeeping: closes runs a scraper left open, once a minute.
+/// Housekeeping, once a minute and at the start: closes runs a scraper left open and sets the
+/// gauges.
 async fn upkeep(state: AppState, mut stop: watch::Receiver<bool>) {
+    let started = chrono::Utc::now();
+    let mut minute = tokio::time::interval(Duration::from_secs(60));
     loop {
         tokio::select! {
-            () = tokio::time::sleep(Duration::from_secs(60)) => {}
+            _ = minute.tick() => {}
             _ = stop.changed() => return,
         }
         if let Err(e) = jobs::close_lapsed(&state).await {
             tracing::warn!(error = %e.message, "closing the runs left open failed");
+        }
+        if state.config.metrics_listen.is_some()
+            && let Err(e) = metrics::publish(&state, started).await
+        {
+            tracing::warn!(error = %e.message, "setting the gauges failed");
         }
     }
 }

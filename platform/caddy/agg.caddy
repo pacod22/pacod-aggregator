@@ -1,0 +1,48 @@
+# pacod-aggregator's sites behind the shared edge (pacod-caddy): the public catalogue and the
+# console. Site blocks only, no global options: imported by a Caddyfile that holds them (pacod-demo's
+# for the full stack) with `import /etc/caddy/sites/*.caddy`. Snippet names carry the prefix agg_.
+#
+#   AGG_API_SITE           the public catalogue's address
+#   AGG_SITE               the console's address
+#   AGG_CADDY_LOG_FORMAT   the access log's format: console (text, the default) or json
+#
+# The admin and internal API (8151) and the metrics (9150) are never published through the edge:
+# the console and the scraper reach the API on pacod-admin-net, Prometheus scrapes on pacod-net.
+
+(agg_access_log) {
+	log {
+		output stdout
+		format filter {
+			wrap {$AGG_CADDY_LOG_FORMAT:console}
+			fields {
+				# What must never be logged (pacod-demo/docs/LOGGING.md): sign-in codes and state,
+				# one-time tokens, hints, return paths; the Referer and the redirect target that
+				# carry the same.
+				request>uri query {
+					delete token
+					delete code
+					delete state
+					delete id_token_hint
+					delete login_hint
+					delete flow
+					delete next
+				}
+				request>headers>Referer delete
+				resp_headers>Location delete
+			}
+		}
+	}
+}
+
+{$AGG_API_SITE:http://agg-api.localhost} {
+	reverse_proxy pacod-aggregator:8150 {
+		health_uri /healthz
+		health_interval 5s
+	}
+	import agg_access_log
+}
+
+{$AGG_SITE:http://agg.localhost} {
+	reverse_proxy agg-console:3000
+	import agg_access_log
+}

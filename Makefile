@@ -1,5 +1,10 @@
 .PHONY: help fmt fmt-check clippy test test-services openapi openapi-check authz-check deny vendor-id \
-	vendor-check verify
+	vendor-check verify network images up dev-up down smoke deploy-check
+
+COMPOSE := docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.standalone.yml
+DEV := $(COMPOSE) -f deploy/docker-compose.dev.yml
+VERSION ?= 0.1.0
+PROMTOOL := docker run --rm -v "$$PWD/deploy/prometheus:/prometheus-files:ro" --entrypoint promtool prom/prometheus:v3.15.0
 
 help: ## This list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -40,3 +45,35 @@ deny: ## cargo deny
 	cargo deny --locked check
 
 verify: fmt-check clippy test openapi-check deny vendor-check ## Every check before a commit
+
+network: ## The shared networks (pacod-demo/docs/NETWORK.md); pacod-admin-net is internal
+	@docker network inspect pacod-net >/dev/null 2>&1 || docker network create pacod-net >/dev/null
+	@docker network inspect pacod-admin-net >/dev/null 2>&1 || docker network create --internal pacod-admin-net >/dev/null
+	@test "$$(docker network inspect -f '{{.Internal}}' pacod-admin-net)" = true || { echo "pacod-admin-net must be internal"; exit 1; }
+
+images: ## The server's, the scraper's and the browser's images
+	docker build -f deploy/docker/rust.Dockerfile --target server --build-arg VERSION=$(VERSION) -t pacod-agg:$(VERSION) .
+	docker build -f deploy/docker/rust.Dockerfile --target scraper --build-arg VERSION=$(VERSION) -t pacod-agg-scraper:$(VERSION) .
+	docker build -f deploy/docker/browser.Dockerfile --build-arg VERSION=$(VERSION) --build-arg CHROMIUM_DAY=$$(date -u +%F) -t pacod-agg-browser:$(VERSION) .
+
+up: network ## The aggregator with its own pacod-id, database, edge and monitoring
+	$(COMPOSE) up -d --wait
+
+dev-up: network ## From the working tree, with the mock vendor; docker-compose.dev.yml lists the ports
+	$(DEV) up -d --build --wait
+
+down: ## Stop whatever of the above runs
+	$(DEV) down
+
+smoke: ## End to end against the development stack, signing in through pacod-id
+	cargo run -q -p pacod-agg-testkit --bin agg-smoke
+
+# The app file names shared components it depends on, so it is valid only together with a file
+# that defines them: the standalone file here, pacod-demo's in the full stack.
+deploy-check: ## The compose files, the edge, the alert rules and their tests, and the dashboard
+	$(COMPOSE) config -q
+	$(DEV) config -q
+	$(PROMTOOL) check rules /prometheus-files/rules/agg.rules.yml
+	$(PROMTOOL) test rules /prometheus-files/tests/agg.rules.test.yml
+	docker run --rm -v "$$PWD/deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$$PWD/platform/caddy:/etc/caddy/sites:ro" caddy:2.11.6-alpine caddy validate --config /etc/caddy/Caddyfile
+	python3 -c 'import json; json.load(open("deploy/grafana/dashboards/agg-overview.json"))'

@@ -301,11 +301,23 @@ mod tests {
         for v in VARIABLES {
             assert!(example.contains(&format!("{v}=")), "{v} is missing in deploy/.env.example");
         }
-        // What only the deployment reads: compose's own settings, the console's and the database's.
+        // What only the deployment reads: compose's own settings, the console's, the edge's, the
+        // database's, and the scraper's own.
         let deployment = |name: &str| {
-            ["AGG_VERSION", "AGG_REGISTRY", "AGG_DB_PASSWORD", "AGG_UI_", "AGG_CONSOLE_", "AGG_API_"]
-                .iter()
-                .any(|p| name.starts_with(p))
+            [
+                "AGG_VERSION",
+                "AGG_REGISTRY",
+                "AGG_DB_PASSWORD",
+                "AGG_UI_",
+                "AGG_CONSOLE_",
+                "AGG_API_",
+                "AGG_SITE",
+                "AGG_ORIGIN",
+                "AGG_CADDY_",
+                "AGG_SCRAPER_",
+            ]
+            .iter()
+            .any(|p| name.starts_with(p))
         };
         for line in example.lines() {
             let line = line.trim_start_matches('#').trim();

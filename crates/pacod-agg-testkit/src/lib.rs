@@ -3,4 +3,5 @@
 
 pub mod extract;
 pub mod mock;
+pub mod oidc;
 pub mod smoke;

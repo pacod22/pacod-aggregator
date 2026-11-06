@@ -1,0 +1,9 @@
+# pacod-aggregator's scrape job for the shared Prometheus (pacod-prometheus), loaded through its
+# scrape_config_files glob (pacod-demo's prometheus.yml). The target is the service name on
+# pacod-net. The job name is what the dashboard and the alerts select on; keep it.
+scrape_configs:
+  - job_name: pacod-aggregator
+    static_configs:
+      - targets: ["pacod-aggregator:9150"]
+        labels:
+          instance: aggregator

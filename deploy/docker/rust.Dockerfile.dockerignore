@@ -1,0 +1,15 @@
+# Build context for rust.Dockerfile: the Cargo workspace and nothing else.
+*
+
+!Cargo.toml
+!Cargo.lock
+!crates
+# The manifest (built into the binary) and the vendored pacod-id crates.
+!authz
+!vendor/pacod-id
+!deploy/docker/healthcheck.rs
+
+**/target
+**/.DS_Store
+**/.env
+**/.env.*

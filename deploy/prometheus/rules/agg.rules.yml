@@ -1,0 +1,39 @@
+# Alert rules for pacod-aggregator. Every expression uses only series the server exports
+# (crates/pacod-agg/src/metrics.rs). Job: pacod-aggregator (platform/prometheus/agg.yml).
+groups:
+  - name: pacod-aggregator
+    rules:
+      - alert: AggregatorDown
+        expr: up{job="pacod-aggregator"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "pacod-aggregator does not answer"
+          description: "Prometheus has not reached {{ $labels.instance }} for two minutes. Gateways keep the model data they last read."
+          runbook: "docs/runbook.md#alerts"
+
+      - alert: AggregatorScraperAbsent
+        # The jobs are on, and no scraper has asked the server for work for 15 minutes: no page is
+        # checked and no price confirmed.
+        expr: |
+          max(agg_scraper_seen_age_seconds) > 900 and on() max(agg_jobs_enabled) == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No aggregator scraper is running"
+          description: "The jobs are switched on, but no scraper has asked for work for {{ $value | humanizeDuration }}. Prices are neither checked nor confirmed."
+          runbook: "docs/runbook.md#alerts"
+
+      - alert: AggregatorPageFailing
+        # A confirmed page has failed three checks in a row (it is checked daily).
+        expr: |
+          max by (vendor, url) (agg_page_failures) >= 3
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The page {{ $labels.url }} of {{ $labels.vendor }} keeps failing"
+          description: "The last {{ $value | humanize }} checks of {{ $labels.url }} failed. Its prices and properties are not updated, and the vendor is not published as complete."
+          runbook: "docs/runbook.md#alerts"

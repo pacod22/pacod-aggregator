@@ -1,0 +1,10 @@
+# Prometheus of pacod-aggregator's own stack. The full stack (pacod-demo) has one for every product.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_config_files:
+  - /etc/prometheus/scrape.d/*.yml
+
+rule_files:
+  - /etc/prometheus/rules/agg/*.yml

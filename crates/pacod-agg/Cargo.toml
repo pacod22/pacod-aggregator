@@ -30,6 +30,7 @@ cron.workspace = true
 hex.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
+metrics-util.workspace = true
 mimalloc.workspace = true
 reqwest.workspace = true
 ring.workspace = true

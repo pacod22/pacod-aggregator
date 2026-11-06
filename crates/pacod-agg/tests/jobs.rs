@@ -141,6 +141,22 @@ async fn the_scan_starts_from_the_pages_and_the_vendors_seeds() {
     assert_eq!(lease(&s, "scan", "scraper-1").await["due"], true);
 }
 
+/// A scraper asks for no lease while a run lasts, and a long run is not a scraper gone.
+#[tokio::test]
+async fn a_heartbeat_counts_as_the_scraper_being_seen() {
+    let s = Server::start(|_| {}).await;
+    s.only_vendor("openai").await;
+    s.add_page("openai", "https://openai.example/pricing").await;
+    let run_id = lease(&s, "check", "scraper-1").await["run_id"].as_str().unwrap().to_owned();
+    let seen = async || {
+        let (_, status) = s.api("GET", "/status", None).await;
+        status["scraper"]["last_seen_at"].as_str().unwrap().parse::<chrono::DateTime<chrono::Utc>>().unwrap()
+    };
+    let before = seen().await;
+    s.internal(&format!("/{run_id}/heartbeat"), json!({ "holder": "scraper-1", "ttl_seconds": 120 })).await;
+    assert!(seen().await > before);
+}
+
 #[tokio::test]
 async fn a_run_left_open_is_closed_and_run_once_more() {
     let s = Server::start(|_| {}).await;

@@ -1,0 +1,202 @@
+# pacod-aggregator on the shared network pacod-net: the app file.
+#
+#   pacod-aggregator  the server: public catalogue (8150), admin and internal API (8151,
+#                     pacod-admin-net only), metrics (9150)
+#   agg-scraper       renders the vendors' pages, checks them daily and scans their sites weekly
+#   agg-browser       the scraper's headless browser, reachable from the scraper alone
+#
+# The shared components (pacod-postgres, pacod-id, pacod-caddy, pacod-prometheus, pacod-grafana)
+# come from docker-compose.standalone.yml in the aggregator's own stack, or from the full stack
+# (pacod-demo), which loads this file and provides them once. The naming convention is
+# pacod-demo/docs/NETWORK.md.
+#
+# Settings come from deploy/.env (copy deploy/.env.example; git-ignored).
+#
+# What is reachable from where:
+#   - Nothing here publishes a port: pacod-caddy serves the public catalogue and the console
+#     (platform/caddy/agg.caddy); docker-compose.dev.yml publishes them for development.
+#   - The admin and internal API are on pacod-admin-net only (internal, no route out), bound to
+#     the alias pacod-aggregator-admin that the server has there alone. The console and the
+#     scraper join pacod-admin-net and call http://pacod-aggregator-admin:8151.
+#   - The server reaches pacod-id's internal listener on pacod-admin-net, at
+#     http://pacod-id-internal:8071.
+#   - agg-browser is on agg-browser-net alone, an internal network it shares with agg-scraper: it
+#     reaches nothing but the scraper. Its pages go out through the scraper's egress proxy, which
+#     listens on agg-scraper-proxy, the alias the scraper has on that network alone, and checks
+#     every connection against AGG_EGRESS_ALLOW_PRIVATE.
+
+name: pacod-aggregator
+
+# Every service rotates its log (pacod-demo/docs/LOGGING.md) and names itself with SERVICE_NAME.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-locked-down: &locked-down
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  pacod-aggregator:
+    <<: *locked-down
+    image: ${AGG_REGISTRY:-}pacod-agg:${AGG_VERSION:-0.1.0}
+    # Built from this checkout when the image is missing, so a stack that includes only this file
+    # (pacod-demo) starts without "make images" or a registry.
+    build:
+      context: ..
+      dockerfile: deploy/docker/rust.Dockerfile
+      target: server
+      args:
+        VERSION: ${AGG_VERSION:-0.1.0}
+    container_name: pacod-aggregator
+    command: ["serve"]
+    environment:
+      SERVICE_NAME: pacod-aggregator
+      AGG_LISTEN: 0.0.0.0:8150
+      # Its address on pacod-admin-net alone: on 0.0.0.0 all of pacod-net would reach it.
+      AGG_ADMIN_LISTEN: pacod-aggregator-admin:8151
+      AGG_METRICS_LISTEN: 0.0.0.0:9150
+      # The password is part of a URL: generate it with "openssl rand -hex 24".
+      DATABASE_URL: postgres://pacod_agg:${AGG_DB_PASSWORD:-}@pacod-postgres:5432/pacod_agg
+      AGG_AUTH: ${AGG_AUTH:-oidc}
+      AGG_DEV_TOKEN: ${AGG_DEV_TOKEN:-}
+      AGG_ID_ISSUER: ${AGG_ID_ISSUER:-}
+      AGG_ID_INTERNAL_URL: http://pacod-id-internal:8071
+      AGG_ID_CLIENT_ID: ${AGG_ID_CLIENT_ID:-pacod-agg-service}
+      AGG_ID_CLIENT_SECRET: ${AGG_ID_CLIENT_SECRET:-}
+      AGG_ID_AUDIENCE: ${AGG_ID_AUDIENCE:-pacod-aggregator}
+      AGG_ID_MAX_STALENESS_SECONDS: ${AGG_ID_MAX_STALENESS_SECONDS:-}
+      AGG_CATALOG_PUBLIC: ${AGG_CATALOG_PUBLIC:-false}
+      AGG_PUBLIC_URL: ${AGG_PUBLIC_URL:-}
+      AGG_INTERNAL_TOKEN: ${AGG_INTERNAL_TOKEN:-}
+      AGG_LLM_URL: ${AGG_LLM_URL:-}
+      AGG_LLM_KEY: ${AGG_LLM_KEY:-}
+      AGG_EGRESS_ALLOW_PRIVATE: ${AGG_EGRESS_ALLOW_PRIVATE:-}
+      AGG_LOG_FORMAT: ${AGG_LOG_FORMAT:-json}
+      RUST_LOG: ${RUST_LOG:-info}
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck", "http://127.0.0.1:8150/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
+    depends_on:
+      pacod-postgres: { condition: service_healthy, required: false }
+      # Creates the role pacod_agg and its database where they do not exist yet.
+      pacod-db-init: { condition: service_completed_successfully, required: false }
+      # Started first, not awaited: the server waits for pacod-id itself.
+      pacod-id: { condition: service_started, required: false }
+    networks:
+      pacod-net:
+      pacod-admin-net:
+        aliases: [pacod-aggregator-admin]
+    logging: *logging
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 256M }
+
+  # The scraper: asks the server for the work of the daily check and the weekly scan, renders the
+  # pages in agg-browser and reports what it found. No database and no key.
+  agg-scraper:
+    <<: *locked-down
+    image: ${AGG_REGISTRY:-}pacod-agg-scraper:${AGG_VERSION:-0.1.0}
+    build:
+      context: ..
+      dockerfile: deploy/docker/rust.Dockerfile
+      target: scraper
+      args:
+        VERSION: ${AGG_VERSION:-0.1.0}
+    container_name: agg-scraper
+    environment:
+      SERVICE_NAME: agg-scraper
+      AGG_SERVER_URL: http://pacod-aggregator-admin:8151
+      AGG_INTERNAL_TOKEN: ${AGG_INTERNAL_TOKEN:-}
+      # Stable across restarts, so that a scraper takes up its own run. A second scraper needs a
+      # name of its own.
+      AGG_SCRAPER_ID: ${AGG_SCRAPER_ID:-agg-scraper}
+      AGG_EGRESS_ALLOW_PRIVATE: ${AGG_EGRESS_ALLOW_PRIVATE:-}
+      AGG_SCRAPER_LISTEN: 0.0.0.0:8152
+      AGG_SCRAPER_BROWSER_URL: http://agg-browser:9222
+      # Bound to the alias on agg-browser-net, so that only the browser reaches the proxy.
+      AGG_SCRAPER_PROXY_LISTEN: agg-scraper-proxy:3128
+      AGG_SCRAPER_PROXY_URL: http://agg-scraper-proxy:3128
+      AGG_SCRAPER_PAGE_TIMEOUT_SECONDS: ${AGG_SCRAPER_PAGE_TIMEOUT_SECONDS:-45}
+      AGG_LOG_FORMAT: ${AGG_LOG_FORMAT:-json}
+      RUST_LOG: ${RUST_LOG:-info}
+    tmpfs:
+      - /tmp:size=16m
+    # Long enough to give up its leases, short of what a page may take: it stops in mid-page.
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck", "http://127.0.0.1:8152/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
+    depends_on:
+      pacod-aggregator: { condition: service_healthy }
+      agg-browser: { condition: service_healthy }
+    networks:
+      pacod-net: {}
+      pacod-admin-net: {}
+      agg-browser-net:
+        aliases: [agg-scraper-proxy]
+    logging: *logging
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+  # Debian's Chromium in headless mode (deploy/docker/browser.Dockerfile), which presents itself
+  # to pages as Chromium with a window does. Unprivileged, on a read-only root with a scratch
+  # /tmp; its sandbox is off (it needs capabilities the container does not have), which the
+  # network makes up for: agg-browser-net has no route out, so a page reaches only the scraper's
+  # proxy. The image's own flags are in its entry point; these are the deployment's.
+  agg-browser:
+    <<: *locked-down
+    image: ${AGG_REGISTRY:-}pacod-agg-browser:${AGG_VERSION:-0.1.0}
+    build:
+      context: ..
+      dockerfile: deploy/docker/browser.Dockerfile
+      args:
+        VERSION: ${AGG_VERSION:-0.1.0}
+    container_name: agg-browser
+    user: "65534:65534"
+    environment:
+      HOME: /tmp
+      SERVICE_NAME: agg-browser
+    command:
+      - --proxy-server=http://agg-scraper-proxy:3128
+      - --proxy-bypass-list=<-loopback>
+    tmpfs:
+      - /tmp:size=256m
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9222"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 2s
+    networks: [agg-browser-net]
+    logging: *logging
+    deploy:
+      resources:
+        # One page at a time; a heavy page takes the browser to about 700 MB.
+        limits: { cpus: "1.0", memory: 1G }
+
+# The first two are shared by every pacod stack on this host; "make network" creates them.
+networks:
+  pacod-net:
+    external: true
+  # Internal (no route out): the listeners that only servers reach, and their clients.
+  pacod-admin-net:
+    external: true
+  # Internal (no route out), the aggregator's own: the scraper and its browser, nothing else.
+  agg-browser-net:
+    internal: true

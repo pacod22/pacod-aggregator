@@ -1,0 +1,11 @@
+# The edge of pacod-aggregator's own stack: the global options, then every product's site blocks
+# (platform/caddy/*.caddy, here agg.caddy alone). pacod-demo's Caddyfile does the same for the full
+# stack.
+{
+	admin off
+	# Development: plain HTTP on ports of its own. A server sets AGG_SITE and AGG_API_SITE to its
+	# https:// addresses, and Caddy obtains the certificates.
+	auto_https disable_redirects
+}
+
+import /etc/caddy/sites/*.caddy

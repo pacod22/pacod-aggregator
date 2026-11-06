@@ -81,6 +81,13 @@ impl Store {
         Ok(())
     }
 
+    /// Records that a scraper is at work on the job. It asks for no lease while a run lasts, and a
+    /// run of many pages takes longer than the alert on an absent scraper waits.
+    pub async fn job_seen(&self, name: &str) -> Result<()> {
+        sqlx::query("UPDATE jobs SET last_polled_at = now() WHERE name = $1").bind(name).execute(self.pool()).await?;
+        Ok(())
+    }
+
     /// Takes or renews the lease for `holder`. Returns false when another holder has it.
     pub async fn job_lease(&self, name: &str, holder: &str, ttl_seconds: u32) -> Result<bool> {
         let taken = sqlx::query(

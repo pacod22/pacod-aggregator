@@ -238,6 +238,7 @@ pub async fn release(st: &AppState, req: &ReleaseRequest) -> ApiResult<()> {
 /// over or another holder has it, so that the scraper stops.
 pub async fn heartbeat(st: &AppState, run_id: &str, req: &HeartbeatRequest) -> ApiResult<Json<HeartbeatReply>> {
     let run = st.store.job_run(run_id).await?.ok_or_else(|| ApiError::not_found("run"))?;
+    st.store.job_seen(&run.job).await?;
     let state = st.store.job_state(&run.job).await?;
     let mine = run.finished_at.is_none() && state.current_run.as_deref() == Some(run_id) && state.holder == req.holder;
     let keep_going = mine && st.store.job_lease(&run.job, &req.holder, req.ttl_seconds.clamp(30, 3600)).await?;

@@ -1,0 +1,112 @@
+# Development overrides of docker-compose.yml and docker-compose.standalone.yml ("make dev-up"):
+# images built from the working tree, the listeners published on the host for the tests, the mock
+# vendor, and fixed, public secrets for everything bound to data. They are not secret, and never
+# ${NAME:-default}: a production deploy/.env must not reach a development stack.
+#
+# The ports:
+#
+#       catalogue         18150      console (via Caddy)  13150
+#       admin API         18151      catalogue (Caddy)    13151
+#       metrics           19150      pacod-id             18372
+#       scraper health    18152      mailpit (web)        18326
+#       agg-mock          19100      prometheus           19091
+#       postgres          15436      grafana              13002
+#
+# Sign in at http://localhost:13150 as admin@pacod-aggregator.test / pacod-aggregator-dev.
+
+services:
+  pacod-aggregator:
+    image: pacod-agg:dev
+    environment:
+      RUST_LOG: ${RUST_LOG:-info,pacod_agg=debug,sqlx=warn}
+      AGG_LOG_FORMAT: text
+      DATABASE_URL: postgres://pacod_agg:pacod_agg_dev_db@pacod-postgres:5432/pacod_agg
+      # Every interface: 18151 below publishes it to the host, and a published port never reaches
+      # pacod-admin-net. The console and the scraper still call the alias.
+      AGG_ADMIN_LISTEN: 0.0.0.0:8151
+      AGG_AUTH: oidc
+      AGG_DEV_TOKEN: ""
+      AGG_ID_ISSUER: http://127.0.0.1:18372
+      AGG_ID_CLIENT_SECRET: dev-only-agg-service-secret-0123456789
+      AGG_PUBLIC_URL: http://127.0.0.1:18150
+      AGG_INTERNAL_TOKEN: dev-only-agg-internal-token-0123456789
+      # The mock reads the pages; the real thing is a pacod-gw with a key of its own.
+      AGG_LLM_URL: http://agg-mock:9100/v1
+      AGG_LLM_KEY: ""
+      AGG_EGRESS_ALLOW_PRIVATE: agg-mock
+    ports:
+      - "127.0.0.1:18150:8150"
+      - "127.0.0.1:18151:8151"
+      - "127.0.0.1:19150:9150"
+
+  agg-scraper:
+    image: pacod-agg-scraper:dev
+    environment:
+      RUST_LOG: ${RUST_LOG:-info,pacod_agg_scraper=debug}
+      AGG_LOG_FORMAT: text
+      AGG_INTERNAL_TOKEN: dev-only-agg-internal-token-0123456789
+      # The mock's pages, for the smoke test.
+      AGG_EGRESS_ALLOW_PRIVATE: agg-mock
+    ports:
+      - "127.0.0.1:18152:8152"
+
+  agg-browser:
+    image: pacod-agg-browser:dev
+
+  # A vendor's site and an extraction model.
+  agg-mock:
+    image: pacod-agg-mock:dev
+    build:
+      context: ..
+      dockerfile: deploy/docker/rust.Dockerfile
+      target: mock
+    container_name: agg-mock
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      SERVICE_NAME: agg-mock
+      AGG_LOG_FORMAT: text
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck", "http://127.0.0.1:9100/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+      start_interval: 1s
+    ports:
+      - "127.0.0.1:19100:9100"
+    # The browser reaches it through the scraper's proxy, as it reaches a vendor.
+    networks: [pacod-net]
+
+  pacod-postgres:
+    environment:
+      POSTGRES_PASSWORD: agg_dev_postgres
+    ports:
+      - "127.0.0.1:15436:5432"
+
+  pacod-db-init:
+    environment:
+      PGPASSWORD: agg_dev_postgres
+      AGG_DB_PASSWORD: pacod_agg_dev_db
+      PID_DB_PASSWORD: pacod_id_dev_postgres
+
+  pacod-id:
+    environment:
+      PID_DATABASE_URL: postgres://pacod_id:pacod_id_dev_postgres@pacod-postgres:5432/pacod_id
+      PID_KEK: ZGV2LW9ubHkta2V5LWZvci1wYWNvZC1pZC1kZXYhISE=
+      PID_TOKEN_PEPPER: dev-only-pacod-id-token-pepper-0123456789
+      AGG_ID_CLIENT_SECRET: dev-only-agg-service-secret-0123456789
+      AGG_UI_CLIENT_SECRET: dev-only-agg-ui-secret-0123456789abcd
+      AGG_ID_ISSUER: http://127.0.0.1:18372
+      AGG_ORIGIN: http://localhost:13150
+      PID_BOOTSTRAP_ADMIN_EMAIL: admin@pacod-aggregator.test
+      PID_BOOTSTRAP_ADMIN_PASSWORD: pacod-aggregator-dev
+    volumes: !override
+      - ./pacod-id/pacod-id.dev.toml:/etc/pacod-id/pacod-id.toml:ro
+
+  pacod-caddy:
+    environment:
+      AGG_SITE: http://localhost:13150
+      AGG_API_SITE: http://localhost:13151

@@ -1,13 +1,17 @@
 //! The whole path through a running stack: the scan finds a vendor's pages on the mock's site, an
 //! administrator confirms them, a check renders them in the browser, the model reads them, the
 //! vendor settles, and a consumer reads the catalogue with the crate a gateway reads it with. Then
-//! the page changes, and the catalogue follows.
+//! the page changes, and the catalogue follows. It signs in through pacod-id as a person does, so
+//! it also covers the server's manifest, the roles it follows and the tokens it takes.
 
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail, ensure};
 use pacod_agg_catalog::{Catalog, Format, Found, parse};
 use serde_json::{Value, json};
+use tokio::sync::Mutex;
+
+use crate::oidc::{IdClient, Session};
 
 /// Where the stack is. The defaults are the development stack's.
 pub struct Options {
@@ -19,7 +23,13 @@ pub struct Options {
     pub mock: String,
     /// The mock as this program reaches it.
     pub mock_control: String,
-    pub token: String,
+    /// The metrics, as this program reaches them.
+    pub metrics: String,
+    /// A token to call with (`AGG_AUTH=dev`). Without one, the test signs in at `issuer`.
+    pub token: Option<String>,
+    pub issuer: String,
+    pub email: String,
+    pub password: String,
 }
 
 impl Options {
@@ -30,14 +40,25 @@ impl Options {
             public: var("SMOKE_PUBLIC_URL", "http://127.0.0.1:18150"),
             mock: var("SMOKE_MOCK_URL", "http://agg-mock:9100"),
             mock_control: var("SMOKE_MOCK_CONTROL_URL", "http://127.0.0.1:19100"),
-            token: var("SMOKE_TOKEN", "dev-only-aggregator-token-0123456789"),
+            metrics: var("SMOKE_METRICS_URL", "http://127.0.0.1:19150/metrics"),
+            token: std::env::var("SMOKE_TOKEN").ok().filter(|t| !t.is_empty()),
+            issuer: var("SMOKE_ID_ISSUER", "http://127.0.0.1:18372"),
+            email: var("SMOKE_EMAIL", "admin@pacod-aggregator.test"),
+            password: var("SMOKE_PASSWORD", "pacod-aggregator-dev"),
         }
     }
+}
+
+/// Who the test calls as.
+enum Caller {
+    Token(String),
+    Person(Mutex<Session>),
 }
 
 struct Smoke {
     o: Options,
     http: reqwest::Client,
+    caller: Caller,
 }
 
 fn step(name: &str, detail: &str) {
@@ -45,9 +66,18 @@ fn step(name: &str, detail: &str) {
 }
 
 impl Smoke {
+    async fn token(&self) -> anyhow::Result<String> {
+        match &self.caller {
+            Caller::Token(token) => Ok(token.clone()),
+            Caller::Person(session) => session.lock().await.access_token().await,
+        }
+    }
+
     async fn api(&self, method: &str, path: &str, body: Option<Value>) -> anyhow::Result<(u16, Value)> {
-        let mut request =
-            self.http.request(method.parse()?, format!("{}/api/v1{path}", self.o.admin)).bearer_auth(&self.o.token);
+        let mut request = self
+            .http
+            .request(method.parse()?, format!("{}/api/v1{path}", self.o.admin))
+            .bearer_auth(self.token().await?);
         if let Some(b) = body {
             request = request.json(&b);
         }
@@ -77,7 +107,7 @@ impl Smoke {
         let r = self
             .http
             .get(format!("{}/v1/catalog?vendor={vendor}", self.o.public))
-            .bearer_auth(&self.o.token)
+            .bearer_auth(self.token().await?)
             .send()
             .await?
             .error_for_status()?;
@@ -106,16 +136,43 @@ impl Smoke {
 }
 
 pub async fn run(o: Options) -> anyhow::Result<()> {
-    let s = Smoke { http: reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?, o };
+    let caller = match &o.token {
+        Some(token) => Caller::Token(token.clone()),
+        None => {
+            let client = IdClient {
+                issuer: o.issuer.clone(),
+                client_id: "agg-smoke".into(),
+                redirect_uri: "http://127.0.0.1:13999/callback".into(),
+            };
+            let session = Session::sign_in(client, &o.email, &o.password).await?;
+            step("a person signs in through pacod-id", &o.email);
+            Caller::Person(Mutex::new(session))
+        }
+    };
+    let http = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
+    let s = Smoke { o, http, caller };
     let vendor = format!("smoke-{}", &uuid::Uuid::now_v7().simple().to_string()[24..]);
-    let result = walk(&s, &vendor).await;
-    // Whatever came of it: the next run starts from the first page, and no vendor stays behind.
+    let (st, settings) = s
+        .wait_for("the server to know the signed-in person", Duration::from_secs(60), async || {
+            // The role comes through pacod-id's feed, a moment after the manifest arrives.
+            let (st, v) = s.api("GET", "/settings", None).await?;
+            Ok((st != 401 && st != 403).then_some((st, v)))
+        })
+        .await?;
+    ensure!(st == 200, "the settings answered {st}: {settings}");
+    let result = walk(&s, &vendor, settings.clone()).await;
+    // Whatever came of it: the next run starts from the first page, no vendor stays behind, and
+    // the scan of the real vendors keeps its own threshold.
     let _ = s.variant(1).await;
     let _ = s.api("DELETE", &format!("/vendors/{vendor}"), None).await;
+    let mut before = settings;
+    before["version"] = s.api("GET", "/settings", None).await?.1["version"].clone();
+    let (st, v) = s.api("PUT", "/settings", Some(before)).await?;
+    ensure!(st == 200 || result.is_err(), "putting the settings back answered {st}: {v}");
     result
 }
 
-async fn walk(s: &Smoke, vendor: &str) -> anyhow::Result<()> {
+async fn walk(s: &Smoke, vendor: &str, mut settings: Value) -> anyhow::Result<()> {
     let mock = s.o.mock.trim_end_matches('/').to_owned();
     s.variant(1).await?;
 
@@ -128,8 +185,10 @@ async fn walk(s: &Smoke, vendor: &str) -> anyhow::Result<()> {
         .await?;
     step("a scraper runs and reaches its browser", status["scraper"]["browser"]["product"].as_str().unwrap_or(""));
 
-    let (_, mut settings) = s.api("GET", "/settings", None).await?;
     settings["extraction_model"] = json!("mock-reader");
+    // The mock's pages are short, and the new vendor has no models yet that would add to their
+    // score: the threshold is for the real vendors' pages.
+    settings["scan"]["min_score"] = json!(4.0);
     let (st, v) = s.api("PUT", "/settings", Some(settings)).await?;
     ensure!(st == 200, "saving the settings answered {st}: {v}");
 
@@ -139,10 +198,11 @@ async fn walk(s: &Smoke, vendor: &str) -> anyhow::Result<()> {
     ensure!(st == 201, "adding the vendor answered {st}: {v}");
 
     // The scan starts from the seed, follows the sitemap and keeps out of what robots.txt forbids.
+    // It waits its turn: on a new stack the first scan of the real vendors takes minutes.
     let (st, _) = s.api("POST", "/runs/scan", None).await?;
     ensure!(st == 202, "asking for a scan answered {st}");
     let proposed: Vec<Value> = s
-        .wait_for("the scan's proposals", Duration::from_secs(180), async || {
+        .wait_for("the scan's proposals", Duration::from_secs(420), async || {
             let (_, pages) = s.api("GET", &format!("/pages?vendor_id={vendor}&status=proposed"), None).await?;
             let list = pages.as_array().cloned().unwrap_or_default();
             let found = |wanted: &str| list.iter().any(|p| p["url"].as_str().is_some_and(|u| u.ends_with(wanted)));
@@ -196,7 +256,7 @@ async fn walk(s: &Smoke, vendor: &str) -> anyhow::Result<()> {
     let unchanged = s
         .http
         .get(format!("{}/v1/catalog?vendor={vendor}", s.o.public))
-        .bearer_auth(&s.o.token)
+        .bearer_auth(s.token().await?)
         .header("if-none-match", &tag)
         .send()
         .await?;
@@ -222,6 +282,12 @@ async fn walk(s: &Smoke, vendor: &str) -> anyhow::Result<()> {
     let new = index.find(vendor, "tracked-new").one().context("tracked-new is missing")?;
     ensure!(new.api_id_confirmed, "the page states the new model's id");
     step("a changed page changes the catalogue", "a new price, a new model");
+
+    let metrics = s.http.get(&s.o.metrics).send().await?.error_for_status()?.text().await?;
+    for series in ["agg_jobs_enabled", "agg_scraper_seen_age_seconds", "agg_models"] {
+        ensure!(metrics.lines().any(|l| l.starts_with(series)), "the metrics have no {series}");
+    }
+    step("the series the alerts read are there", "");
     println!("all steps passed");
     Ok(())
 }
