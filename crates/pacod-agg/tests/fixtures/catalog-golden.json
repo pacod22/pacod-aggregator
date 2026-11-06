@@ -1,0 +1,110 @@
+{
+  "schema": "pacod.catalog/v1",
+  "generated_at": "<generated_at>",
+  "source": {
+    "kind": "pacod_aggregator",
+    "version": "<version>"
+  },
+  "vendors": [
+    {
+      "id": "openai",
+      "display_name": "OpenAI",
+      "currency": "USD",
+      "complete": false,
+      "checked_at": "<checked_at>"
+    }
+  ],
+  "models": [
+    {
+      "id": "<id>",
+      "vendor": "openai",
+      "api_id": "gpt-a",
+      "aliases": [
+        "gpt-a-2026-08-07"
+      ],
+      "api_id_confirmed": false,
+      "display_name": "GPT A",
+      "kind": "chat",
+      "status": "active",
+      "first_seen_at": "<first_seen_at>",
+      "last_seen_at": "<last_seen_at>",
+      "properties": {
+        "context_window": 400000,
+        "max_output_tokens": 16000,
+        "modalities": {
+          "input": [
+            "text",
+            "image"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "vision": true
+      },
+      "parameters": {
+        "temperature": {
+          "support": "accepted",
+          "min": 0.0,
+          "max": 2.0
+        }
+      },
+      "price": {
+        "currency": "USD",
+        "rates": {
+          "input": 2.0,
+          "output": 10.0,
+          "cache_read": 0.2
+        },
+        "variants": {
+          "batch": {
+            "input": 1.0,
+            "output": 5.0
+          }
+        },
+        "tiers": [
+          {
+            "above_input_tokens": 200000,
+            "input": 4.0,
+            "output": 15.0
+          }
+        ],
+        "effective_from": "<effective_from>",
+        "changed_at": "<changed_at>",
+        "checked_at": "<checked_at>",
+        "evidence": {
+          "url": "https://lists.example/openai.json",
+          "method": "feed",
+          "fetched_at": "<fetched_at>"
+        }
+      },
+      "provenance": {
+        "context_window": {
+          "method": "feed",
+          "url": "https://lists.example/openai.json",
+          "checked_at": "<checked_at>"
+        },
+        "max_output_tokens": {
+          "method": "feed",
+          "url": "https://lists.example/openai.json",
+          "checked_at": "<checked_at>"
+        },
+        "modalities": {
+          "method": "feed",
+          "url": "https://lists.example/openai.json",
+          "checked_at": "<checked_at>"
+        },
+        "price": {
+          "method": "feed",
+          "url": "https://lists.example/openai.json",
+          "checked_at": "<checked_at>"
+        },
+        "vision": {
+          "method": "feed",
+          "url": "https://lists.example/openai.json",
+          "checked_at": "<checked_at>"
+        }
+      }
+    }
+  ]
+}

@@ -28,6 +28,7 @@ pub const VARIABLES: &[&str] = &[
     "AGG_ID_AUDIENCE",
     "AGG_ID_MAX_STALENESS_SECONDS",
     "AGG_CATALOG_PUBLIC",
+    "AGG_PUBLIC_URL",
     "AGG_INTERNAL_TOKEN",
     "AGG_LLM_URL",
     "AGG_LLM_KEY",
@@ -135,6 +136,8 @@ pub struct Config {
     pub auth: Auth,
     /// The catalogue is open to anyone, without a token.
     pub catalog_public: bool,
+    /// Where consumers reach the catalogue, as it says of itself.
+    pub public_url: Option<String>,
     /// What the scraper presents on the internal API. Unset: the internal API answers no one.
     pub internal_token: Option<String>,
     pub llm: Option<LlmLink>,
@@ -199,6 +202,10 @@ impl Config {
             database_url: secret(env, "DATABASE_URL")?.context("DATABASE_URL is not set")?,
             auth,
             catalog_public: flag(env, "AGG_CATALOG_PUBLIC", false)?,
+            public_url: match set(env, "AGG_PUBLIC_URL") {
+                Some(u) => Some(check_url("AGG_PUBLIC_URL", &u)?),
+                None => None,
+            },
             internal_token,
             llm,
             egress_allow_private: set(env, "AGG_EGRESS_ALLOW_PRIVATE")

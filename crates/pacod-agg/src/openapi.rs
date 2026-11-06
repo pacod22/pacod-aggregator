@@ -8,10 +8,11 @@ use schemars::{JsonSchema, SchemaGenerator};
 use serde_json::{Map, Value, json};
 
 use crate::api::ErrorBody;
-use crate::api::admin::Session;
+use crate::api::admin::{ModelDetail, ModelList, Session};
 use crate::api::resources::{PageView, SettingsInput, SettingsView};
 use crate::jobs::StatusView;
 use crate::store::jobs::JobRun;
+use crate::store::models::{Change, PriceRow};
 use crate::store::pages::PageInput;
 use crate::store::vendors::{Vendor, VendorInput};
 
@@ -96,6 +97,39 @@ pub fn document() -> Value {
     doc.op("get", "/api/v1/runs", op("runs", "Runs, newest first", 200, None, list(run), filters));
     doc.op("post", "/api/v1/runs/check", op("runs", "Check every page now", 202, None, None, &[]));
     doc.op("post", "/api/v1/runs/scan", op("runs", "Scan every vendor's site now", 202, None, None, &[]));
+
+    let (models, model) = (doc.schema::<ModelList>(), doc.schema::<ModelDetail>());
+    let filters: &[(&str, &str, &str)] = &[
+        ("vendor", "string", "Only this vendor's."),
+        ("status", "string", "Only models of this status."),
+        ("cursor", "string", "Continue a listing."),
+        ("limit", "integer", "Page size."),
+    ];
+    doc.op("get", "/api/v1/models", op("models", "The catalogue's models", 200, None, Some(models), filters));
+    doc.op("get", "/api/v1/models/{id}", op("models", "One model and its history", 200, None, Some(model), &[]));
+    let change = doc.schema::<Change>();
+    let limit: &[(&str, &str, &str)] = &[("limit", "integer", "How many, 100 by default.")];
+    doc.op("get", "/api/v1/changes", op("models", "What changed, newest first", 200, None, list(change), limit));
+
+    // The public API. A catalogue and its models are `pacod.catalog/v1`, whose reference is the
+    // crate `pacod-agg-catalog`: it has its own version, and readers use the crate.
+    let object =
+        json!({ "type": "object", "description": "pacod.catalog/v1, as crates/pacod-agg-catalog defines it." });
+    let vendors: &[(&str, &str, &str)] = &[("vendor", "string", "Vendor ids, comma separated.")];
+    doc.op(
+        "get",
+        "/v1/catalog",
+        op("catalog", "The catalogue (answers 304 to If-None-Match)", 200, None, Some(object.clone()), vendors),
+    );
+    doc.op("get", "/v1/vendors", op("catalog", "The vendors", 200, None, list(object.clone()), &[]));
+    doc.op("get", "/v1/models", op("catalog", "A page of models", 200, None, Some(object.clone()), filters));
+    doc.op("get", "/v1/models/{id}", op("catalog", "One model", 200, None, Some(object), &[]));
+    let price = doc.schema::<PriceRow>();
+    doc.op(
+        "get",
+        "/v1/models/{id}/prices",
+        op("catalog", "Every version of a model's price", 200, None, list(price), &[]),
+    );
 
     let (vendor, vendor_in) = (doc.schema::<Vendor>(), doc.schema::<VendorInput>());
     doc.op("get", "/api/v1/vendors", op("vendors", "The vendors", 200, None, list(vendor.clone()), &[]));

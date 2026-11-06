@@ -13,14 +13,17 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 
 pub mod api;
+pub mod catalog;
 pub mod config;
 pub mod identity;
 pub mod jobs;
 pub mod metrics;
 pub mod openapi;
+pub mod readings;
 pub mod schedule;
 pub mod seeds;
 pub mod settings;
+pub mod settle;
 pub mod store;
 
 use api::{AppState, AuthMode};

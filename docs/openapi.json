@@ -170,6 +170,395 @@
         }
       }
     },
+    "/api/v1/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "The catalogue's models",
+        "operationId": "get_api_v1_models",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vendor",
+            "in": "query",
+            "required": false,
+            "description": "Only this vendor's.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Only models of this status.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Continue a listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/models/{id}": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "One model and its history",
+        "operationId": "get_api_v1_models_id",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/changes": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "What changed, newest first",
+        "operationId": "get_api_v1_changes",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Change"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "How many, 100 by default.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/catalog": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "The catalogue (answers 304 to If-None-Match)",
+        "operationId": "get_v1_catalog",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "pacod.catalog/v1, as crates/pacod-agg-catalog defines it."
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vendor",
+            "in": "query",
+            "required": false,
+            "description": "Vendor ids, comma separated.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/vendors": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "The vendors",
+        "operationId": "get_v1_vendors",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "description": "pacod.catalog/v1, as crates/pacod-agg-catalog defines it."
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "A page of models",
+        "operationId": "get_v1_models",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "pacod.catalog/v1, as crates/pacod-agg-catalog defines it."
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vendor",
+            "in": "query",
+            "required": false,
+            "description": "Only this vendor's.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Only models of this status.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Continue a listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/models/{id}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "One model",
+        "operationId": "get_v1_models_id",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "pacod.catalog/v1, as crates/pacod-agg-catalog defines it."
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/models/{id}/prices": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Every version of a model's price",
+        "operationId": "get_v1_models_id_prices",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PriceRow"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/vendors": {
       "get": {
         "tags": [
@@ -1022,6 +1411,294 @@
           "message"
         ],
         "description": "The browser the scraper renders pages in, as the scraper last reported it."
+      },
+      "ModelList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelSummary"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where the next page starts. Absent on the last page."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "ModelSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "api_id": {
+            "type": "string"
+          },
+          "api_id_confirmed": {
+            "type": "boolean",
+            "description": "Whether a vendor's own page states the id."
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "context_window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Per million tokens."
+          },
+          "output": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Per million tokens."
+          },
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When its source last stated the price."
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "vendor",
+          "api_id",
+          "api_id_confirmed",
+          "status",
+          "last_seen_at"
+        ],
+        "description": "A model in a list: what the console's table shows."
+      },
+      "ModelDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "api_id": {
+            "type": "string"
+          },
+          "api_id_confirmed": {
+            "type": "boolean",
+            "description": "Whether a vendor's own page states the id."
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "context_window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Per million tokens."
+          },
+          "output": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Per million tokens."
+          },
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When its source last stated the price."
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entry": {
+            "description": "The model as the catalogue publishes it (`pacod.catalog/v1`)."
+          },
+          "prices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceRow"
+            },
+            "description": "Every version of its price, newest first."
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            },
+            "description": "What changed, newest first."
+          }
+        },
+        "required": [
+          "id",
+          "vendor",
+          "api_id",
+          "api_id_confirmed",
+          "status",
+          "last_seen_at",
+          "entry",
+          "prices",
+          "changes"
+        ],
+        "description": "A model with everything known about it."
+      },
+      "PriceRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "price": {
+            "description": "The catalogue's price, without its dates."
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When its source last stated it."
+          },
+          "superseded_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the next version replaced it. Absent for the price in effect."
+          }
+        },
+        "required": [
+          "id",
+          "model_id",
+          "price",
+          "effective_from",
+          "checked_at"
+        ],
+        "description": "One version of a price."
+      },
+      "Change": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vendor_id": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string",
+            "description": "`created`, `price`, `gone`, `back`, or a property's name."
+          },
+          "old": true,
+          "new": true,
+          "run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "vendor_id",
+          "model_id",
+          "field"
+        ],
+        "description": "One entry of the log of what changed."
       },
       "Vendor": {
         "type": "object",

@@ -5,6 +5,7 @@ use axum::http::StatusCode;
 use axum::http::request::Parts;
 use axum::routing::post;
 use axum::{Json, Router};
+use pacod_agg_jobs::extraction::PageReading;
 use pacod_agg_jobs::jobs::{
     HeartbeatReply, HeartbeatRequest, INTERNAL_TOKEN_HEADER, JobResult, LeaseReply, LeaseRequest, ReleaseRequest,
     ScanReport,
@@ -13,7 +14,7 @@ use serde_json::Value;
 use subtle::ConstantTimeEq;
 
 use super::{ApiError, ApiResult, AppState};
-use crate::jobs;
+use crate::{jobs, readings};
 
 /// A caller that presented the internal token.
 struct Scraper;
@@ -57,6 +58,15 @@ async fn scan(
     jobs::scan_report(&st, &run_id, &report).await
 }
 
+async fn reading(
+    State(st): State<AppState>,
+    _: Scraper,
+    Path(run_id): Path<String>,
+    Json(reading): Json<PageReading>,
+) -> ApiResult<Json<Value>> {
+    readings::reading(&st, &run_id, &reading).await
+}
+
 async fn result(
     State(st): State<AppState>,
     _: Scraper,
@@ -71,6 +81,7 @@ pub fn routes() -> Router<AppState> {
         .route("/jobs/lease", post(lease))
         .route("/jobs/release", post(release))
         .route("/jobs/{run}/heartbeat", post(heartbeat))
+        .route("/jobs/{run}/readings", post(reading))
         .route("/jobs/{run}/scan", post(scan))
         .route("/jobs/{run}/result", post(result))
 }

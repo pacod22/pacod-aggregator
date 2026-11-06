@@ -48,6 +48,7 @@ impl Server {
             database_url: database().await,
             auth: Auth::Dev { token: DEV.into() },
             catalog_public: false,
+            public_url: None,
             internal_token: Some(INTERNAL.into()),
             llm: None,
             egress_allow_private: vec![],

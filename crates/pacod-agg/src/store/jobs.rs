@@ -182,6 +182,22 @@ impl Store {
         Ok(())
     }
 
+    /// Marks a vendor as settled in a run, once: of two readings that finish together, the one
+    /// this answers true for settles it.
+    pub async fn job_run_settling(&self, run_id: &str, vendor_id: &str) -> Result<bool> {
+        let done = sqlx::query(
+            "UPDATE job_runs SET result = jsonb_set(result, '{settled}',
+                 coalesce(result -> 'settled', '[]'::jsonb) || to_jsonb($2::text))
+             WHERE id = $1 AND NOT coalesce(result -> 'settled', '[]'::jsonb) ? $2",
+        )
+        .bind(run_id)
+        .bind(vendor_id)
+        .execute(self.pool())
+        .await?
+        .rows_affected();
+        Ok(done == 1)
+    }
+
     /// Records the end of a run. Returns false when the run is unknown or already finished.
     pub async fn job_finish(&self, run_id: &str, ok: bool, message: &str, result: &Value) -> Result<bool> {
         let mut tx = self.pool().begin().await?;
