@@ -350,6 +350,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The catalogue, as /v1/catalog answers it */
+        get: operations["get_api_v1_catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -721,7 +738,8 @@ export interface components {
             time_zone?: string;
             /**
              * @description The model that reads the pages, by the name its endpoint takes: a chat model with
-             *     structured output. Pages are not read until one is set.
+             *     structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until one of
+             *     the two names a model.
              */
             extraction_model?: string | null;
             /**
@@ -763,6 +781,11 @@ export interface components {
             openrouter_price_vendors?: string[];
             /** Format: int32 */
             version: number;
+            /**
+             * @description The operator's `AGG_LLM_MODEL`, used while `extraction_model` is empty. It is set in the
+             *     environment and cannot be changed here.
+             */
+            extraction_model_default?: string | null;
         };
         /** @description How the weekly scan looks for pages. */
         ScanSettings: {
@@ -817,7 +840,8 @@ export interface components {
             time_zone?: string;
             /**
              * @description The model that reads the pages, by the name its endpoint takes: a chat model with
-             *     structured output. Pages are not read until one is set.
+             *     structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until one of
+             *     the two names a model.
              */
             extraction_model?: string | null;
             /**
@@ -1678,6 +1702,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description A problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_api_v1_catalog: {
+        parameters: {
+            query?: {
+                /** @description Vendor ids, comma separated. */
+                vendor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
             };
             /** @description A problem */
             default: {

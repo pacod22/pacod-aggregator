@@ -1,6 +1,8 @@
 //! What an administrator sets in the console: when pages are checked and scanned for, and the
 //! model that reads them. The extraction model's address and key are the operator's, in the
-//! environment (`AGG_LLM_URL`, `AGG_LLM_KEY`).
+//! environment (`AGG_LLM_URL`, `AGG_LLM_KEY`), and never here: this document is shown to anyone who
+//! may read the console, and an address that could be edited could send the key elsewhere. The
+//! operator may name a model there too (`AGG_LLM_MODEL`); one named here takes its place.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -44,7 +46,8 @@ pub struct Settings {
     /// The IANA time zone the schedules are read in.
     pub time_zone: String,
     /// The model that reads the pages, by the name its endpoint takes: a chat model with
-    /// structured output. Pages are not read until one is set.
+    /// structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until one of
+    /// the two names a model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extraction_model: Option<String>,
     /// How much the extraction model takes in at once, for the size of the parts of a long page.
@@ -61,7 +64,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             // On, so that a new installation scans for pages at once and an administrator only
-            // confirms them. Nothing is read by a model before a page is confirmed and a model set.
+            // confirms them. Nothing is read by a model before a page is confirmed and a model named.
             enabled: true,
             // Daily, an hour before a gateway's sync at its default hour.
             schedule: "17 2 * * *".into(),
@@ -99,11 +102,6 @@ impl Settings {
             return Err("scan.keywords takes up to 32 words of at most 40 characters".into());
         }
         Ok(())
-    }
-
-    /// Whether a model can read pages.
-    pub fn can_extract(&self) -> bool {
-        self.extraction_model.is_some()
     }
 }
 

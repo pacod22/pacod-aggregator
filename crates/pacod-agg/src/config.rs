@@ -9,6 +9,8 @@ use std::net::SocketAddr;
 
 use anyhow::{Context, bail, ensure};
 
+use crate::settings::Settings;
+
 /// A shorter development token is refused.
 const MIN_DEV_TOKEN: usize = 32;
 /// A shorter internal token is refused.
@@ -32,6 +34,8 @@ pub const VARIABLES: &[&str] = &[
     "AGG_INTERNAL_TOKEN",
     "AGG_LLM_URL",
     "AGG_LLM_KEY",
+    "AGG_LLM_MODEL",
+    "AGG_LLM_MAX_TOKENS_FIELD",
     "AGG_EGRESS_ALLOW_PRIVATE",
     "AGG_LOG_FORMAT",
 ];
@@ -118,13 +122,25 @@ pub enum Auth {
     Dev { token: String },
 }
 
-/// Where the extraction model is reached: an OpenAI-compatible endpoint, in the family a gateway
-/// of pacod-gw with a key of its own. The model's name is a setting; the address and the key are
-/// the operator's, here alone, because the key goes to that address with every call.
+/// The name of the limit on an answer's length, where an endpoint is not told otherwise.
+const DEFAULT_LIMIT_FIELD: &str = "max_tokens";
+
+/// Where the extraction model is reached: an OpenAI-compatible endpoint, a provider's own or a
+/// gateway of pacod-gw, with a key of its own. The address and the key are the operator's, here
+/// alone, because the key goes to that address with every call.
 #[derive(Clone)]
 pub struct LlmLink {
     pub url: String,
     pub key: Option<String>,
+    /// What the endpoint calls the limit on an answer's length. A gateway translates it for each
+    /// provider; called directly, a provider takes its own name for it or refuses the call.
+    pub limit_field: &'static str,
+}
+
+impl LlmLink {
+    pub fn new(url: String, key: Option<String>) -> Self {
+        Self { url, key, limit_field: DEFAULT_LIMIT_FIELD }
+    }
 }
 
 #[derive(Clone)]
@@ -141,8 +157,19 @@ pub struct Config {
     /// What the scraper presents on the internal API. Unset: the internal API answers no one.
     pub internal_token: Option<String>,
     pub llm: Option<LlmLink>,
+    /// The operator's model, used while the console names none. Kept apart from `llm`, so that an
+    /// address left empty to pause reading does not also lose the name.
+    pub llm_model: Option<String>,
     /// Hosts and ranges that are not public and that pages may still be read from.
     pub egress_allow_private: Vec<String>,
+}
+
+fn limit_field(env: Env) -> anyhow::Result<&'static str> {
+    match set(env, "AGG_LLM_MAX_TOKENS_FIELD").as_deref() {
+        None | Some("max_tokens") => Ok(DEFAULT_LIMIT_FIELD),
+        Some("max_completion_tokens") => Ok("max_completion_tokens"),
+        Some(other) => bail!("AGG_LLM_MAX_TOKENS_FIELD must be max_tokens or max_completion_tokens, not {other:?}"),
+    }
 }
 
 fn id_settings(env: Env) -> anyhow::Result<IdSettings> {
@@ -183,9 +210,13 @@ impl Config {
         if let Some(t) = &internal_token {
             ensure!(t.len() >= MIN_INTERNAL_TOKEN, "AGG_INTERNAL_TOKEN has fewer than {MIN_INTERNAL_TOKEN} characters");
         }
+        // Read whether or not there is an address: a mistyped name stops the start either way.
+        let limit_field = limit_field(env)?;
         let llm = match set(env, "AGG_LLM_URL") {
             None => None,
-            Some(url) => Some(LlmLink { url: check_url("AGG_LLM_URL", &url)?, key: secret(env, "AGG_LLM_KEY")? }),
+            Some(url) => {
+                Some(LlmLink { url: check_url("AGG_LLM_URL", &url)?, key: secret(env, "AGG_LLM_KEY")?, limit_field })
+            }
         };
         let metrics_listen = match set(env, "AGG_METRICS_LISTEN").as_deref() {
             Some("off") => None,
@@ -208,10 +239,23 @@ impl Config {
             },
             internal_token,
             llm,
+            llm_model: set(env, "AGG_LLM_MODEL"),
             egress_allow_private: set(env, "AGG_EGRESS_ALLOW_PRIVATE")
                 .map(|v| v.split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect())
                 .unwrap_or_default(),
         })
+    }
+}
+
+impl Config {
+    /// The model that reads pages: the one named in the console, else the operator's.
+    pub fn extraction_model<'a>(&'a self, settings: &'a Settings) -> Option<&'a str> {
+        settings.extraction_model.as_deref().or(self.llm_model.as_deref())
+    }
+
+    /// Whether pages can be read: a model is named and there is an endpoint to call it on.
+    pub fn can_read(&self, settings: &Settings) -> bool {
+        self.llm.is_some() && self.extraction_model(settings).is_some()
     }
 }
 
@@ -256,11 +300,37 @@ mod tests {
             ("AGG_INTERNAL_TOKEN", "short"),
             ("AGG_LLM_URL", "ftp://example.com"),
             ("AGG_LLM_URL", "https://user:secret@example.com"),
+            ("AGG_LLM_MAX_TOKENS_FIELD", "max_output_tokens"),
         ] {
             assert!(with(&[bad]).is_err(), "{bad:?}");
         }
         assert!(config(&[("AGG_AUTH", "dev"), ("AGG_DEV_TOKEN", DEV)]).is_err(), "no database");
         assert!(config(&[("DATABASE_URL", "postgres://x/y")]).is_err(), "oidc without its settings");
+    }
+
+    #[test]
+    fn the_model_comes_from_the_console_and_else_from_the_environment() {
+        let c = with(&[("AGG_LLM_URL", "https://api.example.com/v1"), ("AGG_LLM_MODEL", "from-env")]).unwrap();
+        let mut settings = Settings::default();
+        assert_eq!(c.extraction_model(&settings), Some("from-env"));
+        assert!(c.can_read(&settings));
+        settings.extraction_model = Some("from-console".into());
+        assert_eq!(c.extraction_model(&settings), Some("from-console"));
+    }
+
+    #[test]
+    fn a_name_without_an_address_is_kept_but_reads_nothing() {
+        let c = with(&[("AGG_LLM_MODEL", "from-env")]).unwrap();
+        assert_eq!(c.extraction_model(&Settings::default()), Some("from-env"));
+        assert!(!c.can_read(&Settings::default()));
+    }
+
+    #[test]
+    fn the_limit_has_the_usual_name_until_told_otherwise() {
+        let url = ("AGG_LLM_URL", "https://api.example.com/v1");
+        assert_eq!(with(&[url]).unwrap().llm.unwrap().limit_field, "max_tokens");
+        let named = with(&[url, ("AGG_LLM_MAX_TOKENS_FIELD", "max_completion_tokens")]).unwrap();
+        assert_eq!(named.llm.unwrap().limit_field, "max_completion_tokens");
     }
 
     #[test]

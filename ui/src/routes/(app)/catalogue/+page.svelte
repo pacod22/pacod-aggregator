@@ -1,11 +1,15 @@
 <script lang="ts">
 	import { rate } from '#lib/catalogue.ts';
 	import Badge from '#lib/components/Badge.svelte';
+	import Notice from '#lib/components/Notice.svelte';
 	import PageHeader from '#lib/components/PageHeader.svelte';
 	import { formatDateTime, formatInteger } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	// Only these are published: the export of another would be empty.
+	const published = $derived(data.vendors.filter((vendor) => vendor.enabled));
 
 	const next = $derived.by(() => {
 		if (!data.models.next_cursor) return null;
@@ -20,6 +24,10 @@
 	title="Catalogue"
 	description="What the aggregator publishes: the models of each vendor, with their properties and prices."
 />
+
+{#if data.exportFailed}
+	<Notice tone="error">The catalogue could not be exported. Try again in a moment.</Notice>
+{/if}
 
 <form method="GET" class="row filters">
 	<label>
@@ -42,6 +50,28 @@
 	</label>
 	<button class="btn" type="submit">Show</button>
 </form>
+
+<details class="card">
+	<summary>Export</summary>
+	<!-- A download, not a page: left to SvelteKit, this form would be a navigation. -->
+	<form method="GET" action="/catalogue/export" data-sveltekit-reload class="stack">
+		<p class="muted small">
+			The catalogue as a JSON file, in the format of the API (<code>pacod.catalog/v1</code>). Tick
+			vendors to export only theirs; with none ticked, it holds every vendor. The filters above do
+			not apply: a vendor is exported whole, so that a gateway reading the file does not take its
+			missing models as retired.
+		</p>
+		<div class="row vendors">
+			{#each published as vendor (vendor.id)}
+				<label>
+					<input type="checkbox" name="vendor" value={vendor.id} />
+					{vendor.display_name}
+				</label>
+			{/each}
+		</div>
+		<div><button class="btn" type="submit">Download</button></div>
+	</form>
+</details>
 
 <div class="table-wrap">
 	<table>
@@ -88,5 +118,10 @@
 
 	.filters select {
 		width: auto;
+	}
+
+	.vendors {
+		flex-wrap: wrap;
+		gap: var(--space-3);
 	}
 </style>

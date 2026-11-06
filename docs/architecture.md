@@ -19,6 +19,11 @@ once a day.
 The server is the only part with a database and the only one that calls a model. The scraper holds
 neither a key nor data, so a browser taken over by a page has nothing to reach for.
 
+Reading a page is the only call of a model. The scan and settling are rules, so that what a consumer
+relies on (section 5) holds whatever a model answers. The model is the one named in the console, or
+else the operator's `AGG_LLM_MODEL`. Its endpoint and key are the operator's alone, in the
+environment. pacod-gw is one choice of endpoint, not a dependency.
+
 ```text
 vendor sites <-- proxy (in agg-scraper) <-- agg-browser
                         |
@@ -40,7 +45,8 @@ vendor sites <-- proxy (in agg-scraper) <-- agg-browser
 5. When a vendor's pages are done, the server settles them (section 5) and writes prices as new
    versions, and every change to the `changes` table.
 6. Gateways ask `/v1/catalog`. The answer carries an ETag over its content, so an unchanged
-   catalogue costs them a 304.
+   catalogue costs them a 304. The console's export comes from the same code, as
+   `GET /api/v1/catalog`, so a file holds what the API serves.
 
 The weekly `scan` job starts from a vendor's sites and active pages, follows its sitemap and links,
 keeps out of what `robots.txt` forbids, and proposes pages that list models and prices. Nothing is

@@ -41,7 +41,7 @@ All go in `deploy/.env`, which git ignores. Never print it, and never print the 
 | `AGG_UI_CLIENT_SECRET` | The console at pacod-id. | `openssl rand -hex 32` |
 | `AGG_UI_SESSION_SECRET` | Seals the console's cookie. At least 32 characters. | `openssl rand -hex 32` |
 | `AGG_INTERNAL_TOKEN` | The scraper on the internal API. At least 16 characters. | `openssl rand -hex 32` |
-| `AGG_LLM_KEY` | The key of the extraction model's endpoint. | From the gateway. |
+| `AGG_LLM_KEY` | The key of the extraction model's endpoint. | From the provider, or from the gateway. |
 
 The aggregator's own stack also needs `POSTGRES_PASSWORD`, `PID_DB_PASSWORD`, `PID_KEK`
 (`openssl rand -base64 32`), `PID_TOKEN_PEPPER` and `ID_ADMIN_PASSWORD`.
@@ -57,8 +57,9 @@ The aggregator's own stack also needs `POSTGRES_PASSWORD`, `PID_DB_PASSWORD`, `P
 5. The server starts with a list of vendors, and scans their sites at once. That takes minutes.
 6. On **Pages**, confirm the pages that list models and prices, and dismiss the others. Until
    then only the OpenRouter and LiteLLM lists are read.
-7. Point `AGG_LLM_URL` and `AGG_LLM_KEY` at an OpenAI-compatible endpoint, and name a chat model
-   with structured output on **Settings**. Without one, pages are fetched but not read.
+7. Point `AGG_LLM_URL` and `AGG_LLM_KEY` at an OpenAI-compatible endpoint, a provider's own
+   (section 13) or a gateway's, and name a chat model with structured output, as `AGG_LLM_MODEL` or
+   on **Settings**. Without one, pages are fetched but not read.
 8. On **Vendors**, mark a vendor complete once its pages list all its models. Gateways retire
    models only for a complete vendor.
 9. For a gateway, make a service account with `agg.consumer` at pacod-id, and
@@ -73,13 +74,17 @@ The aggregator's own stack also needs `POSTGRES_PASSWORD`, `PID_DB_PASSWORD`, `P
 | Check | `17 2 * * *` | When the confirmed pages are read. |
 | Scan | `41 4 * * 1` | When the sites are scanned. |
 | Time zone | `UTC` | The zone of both. |
-| Extraction model | none | The model that reads pages. |
+| Extraction model | `AGG_LLM_MODEL` | The model that reads pages. A name saved here takes the variable's place. Left empty, the variable applies. |
 | Context window | 200,000 | Sets the size of the parts of a long page. |
 | Calls per run | 60 | The limit on the model calls of one run. |
 | Score to be proposed | 10 | A price counts 2, a known model 3, a keyword 4. |
 | OpenRouter's prices | openai, anthropic, google, xai | Vendors whose prices are taken from its list. For others its price is usually a third party's. |
 
 The form is refused if someone else saved in between. Load it again.
+
+One model does all the reading. The scan and settling into the catalogue call none. Its address and
+key are never settings: they stay in the environment, because this page is shown to every viewer and
+an address that could be edited could send the key elsewhere.
 
 ## 6. Health checks
 
@@ -143,6 +148,8 @@ them, nor the price history.
 | Saving a form answers 403 | `AGG_CONSOLE_URL`, or Caddy's `x-forwarded-proto`, differs from the address in the browser. |
 | A run fails with `N of M pages did not reach the server` | The scraper read them, but the server did not take its reports, and the message holds the first error. A vendor is published only when all its pages arrived, so its data stays as it was. Check `docker logs pacod-aggregator` and PostgreSQL's disk, then **Check now** on **Runs**. The next run otherwise waits for the schedule. |
 | A page always fails | The vendor may refuse the scraper. The last check's message on **Pages** says what it answered. |
+| Every page fails with `the extraction model answered 400` | The message holds the endpoint's reason. Usually it is the name of the limit, `AGG_LLM_MAX_TOKENS_FIELD`, or a model without structured output. See section 13. |
+| A page fails with `did not answer with a JSON object` | The model may have run out of room. See section 13. |
 | A page is read but finds nothing | **Runs** shows the extraction's message. A heavily scripted page may need a longer `AGG_SCRAPER_PAGE_TIMEOUT_SECONDS`. |
 | The browser is killed | It needs about 700 MB for a heavy page. `docker inspect agg-browser` shows `OOMKilled`. Raise its limit. |
 | A scan takes minutes | That is normal: it renders up to 12 pages per vendor, one at a time, and runs wait for each other. |
@@ -165,3 +172,41 @@ it scans real vendors' sites on its schedule, as any installation does.
 
 The development secrets are fixed and public. They are never `${NAME:-default}`, which would let
 `deploy/.env` in.
+
+## 13. Without a gateway
+
+The aggregator needs no gateway. It calls whatever `AGG_LLM_URL` names, and nothing else ties it to
+pacod-gw. To have a provider read the pages directly, set these in `deploy/.env` and recreate the
+server:
+
+```sh
+AGG_LLM_URL=https://api.openai.com/v1
+AGG_LLM_KEY=<the provider's key>
+AGG_LLM_MODEL=<a chat model with structured output>
+AGG_LLM_MAX_TOKENS_FIELD=max_completion_tokens
+```
+
+The endpoint has to meet these conditions:
+
+| Condition | Why |
+|---|---|
+| It speaks OpenAI's Chat Completions API, with a bearer key. | The call goes to `AGG_LLM_URL` followed by `/chat/completions`, so the address includes its `/v1`. |
+| It takes `response_format` with a strict `json_schema`. | Every answer is held to that shape. An endpoint that refuses it fails every page. |
+| `AGG_LLM_MAX_TOKENS_FIELD` is the name it takes. | OpenAI's newer models refuse `max_tokens`, and other endpoints may refuse `max_completion_tokens`. A gateway translates it, so leave it as it is there. |
+
+Anthropic's Messages API, Gemini and Azure OpenAI each differ from this. They go through a pacod-gw.
+
+Two things change when no gateway is in between:
+
+- **Cost.** A gateway accounts each call, and its key can carry a spending cap. A direct key has
+  neither here. `max_extractions_per_run` is the only limit in the aggregator, so set a spending
+  limit at the provider.
+- **Long answers.** One call may write 16,000 tokens. On OpenAI's reasoning models that limit covers
+  the reasoning and the answer together, so a model can use it up before it finishes. The page then
+  fails with `the extraction model did not answer with a JSON object`. Try a model that reasons
+  less, or a **Context window** on **Settings** under 64,000, which gives each call less to read.
+
+In the full stack, set these in pacod-demo instead: `AGG_LLM_URL`, `AGG_LLM_MODEL` and
+`AGG_LLM_MAX_TOKENS_FIELD` in `demo.env`, and `AGG_LLM_KEY` in `demo.local.env`, then `make up`. With
+`AGG_LLM_URL` empty it uses the gateway and the aggregator's key there. With it set, that key is
+never sent to the endpoint named.

@@ -28,7 +28,7 @@ A feature suggestion helps most when it says:
 - how you would expect the aggregator to behave;
 - what you use instead, if anything.
 
-Issues are public. Remove gateway keys, tokens and passwords from everything you post.
+Issues are public. Remove API keys, tokens and passwords from everything you post.
 Placeholders are enough.
 
 ## Security vulnerabilities

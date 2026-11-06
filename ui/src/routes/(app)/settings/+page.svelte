@@ -7,6 +7,13 @@
 	let { data, form }: PageProps = $props();
 	const manage = $derived(may(data.principal?.permissions ?? [], 'agg.data.manage'));
 	const settings = $derived(data.settings);
+	const modelInUse = $derived.by(() => {
+		if (settings.extraction_model) return `In use: ${settings.extraction_model}, named here.`;
+		if (settings.extraction_model_default) {
+			return `In use: ${settings.extraction_model_default}, from AGG_LLM_MODEL. A name saved here takes its place.`;
+		}
+		return 'Pages are not read until a model is named, here or as AGG_LLM_MODEL.';
+	});
 </script>
 
 <PageHeader
@@ -35,9 +42,18 @@
 
 	<fieldset disabled={!manage} class="stack">
 		<legend>Extraction</legend>
-		<p class="muted small">Pages are not read until a model is named.</p>
+		<p class="muted small">
+			The one model the aggregator calls: it reads the pages. The scan and settling into the
+			catalogue use none. Its endpoint and key are set in the environment.
+		</p>
+		<p class="muted small">{modelInUse}</p>
 		<label for="extraction_model">Model, by the name its endpoint takes</label>
-		<input id="extraction_model" name="extraction_model" value={settings.extraction_model ?? ''} />
+		<input
+			id="extraction_model"
+			name="extraction_model"
+			value={settings.extraction_model ?? ''}
+			placeholder={settings.extraction_model_default ?? ''}
+		/>
 		<label for="extraction_context_window">How much the model takes in at once, in tokens</label>
 		<input
 			id="extraction_context_window"

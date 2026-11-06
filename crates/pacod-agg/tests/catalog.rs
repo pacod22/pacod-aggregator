@@ -3,7 +3,7 @@
 mod common;
 
 use common::{DEV, Server};
-use pacod_agg_catalog::{Format, parse};
+use pacod_agg_catalog::{Catalog, Format, parse};
 use serde_json::{Value, json};
 
 /// A vendor with `models` settled from a list, straight through the internal API.
@@ -34,6 +34,35 @@ fn listed(id: &str) -> Value {
 
 async fn fresh(s: &Server) {
     sqlx::query("DELETE FROM pages").execute(s.store.pool()).await.unwrap();
+}
+
+/// A catalogue as a consumer reads it, without the moment it was written, which differs per call.
+async fn undated(s: &Server, url: String) -> Catalog {
+    let r = s.http.get(url).bearer_auth(DEV).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let catalog = parse(&r.bytes().await.unwrap(), Some(Format::Catalog)).unwrap();
+    Catalog { generated_at: None, ..catalog }
+}
+
+#[tokio::test]
+async fn the_export_is_the_catalogue() {
+    let s = Server::start(|_| {}).await;
+    fresh(&s).await;
+    settled(&s, "openai", json!([listed("gpt-a")])).await;
+    settled(&s, "xai", json!([listed("grok-a")])).await;
+
+    for query in ["", "?vendor=xai", "?vendor=openai,xai"] {
+        let public = undated(&s, format!("{}/v1/catalog{query}", s.public)).await;
+        let export = undated(&s, format!("{}/api/v1/catalog{query}", s.admin)).await;
+        assert_eq!(public, export, "{query}");
+    }
+    // A vendor left out leaves with its models, and one kept keeps all of its own: a file that
+    // dropped models of a complete vendor could make a gateway retire them.
+    let one = undated(&s, format!("{}/api/v1/catalog?vendor=xai", s.admin)).await;
+    let vendors: Vec<&str> = one.vendors.iter().map(|v| v.id.as_str()).collect();
+    assert_eq!(vendors, ["xai"]);
+    let models: Vec<&str> = one.models.iter().filter_map(|m| m.vendor.as_deref()).collect();
+    assert_eq!(models, ["xai"]);
 }
 
 #[tokio::test]

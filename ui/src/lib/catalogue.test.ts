@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evidenceUrl, facts, rate, rates } from './catalogue';
+import { evidenceUrl, exportFileName, facts, rate, rates } from './catalogue';
 
 describe('facts', () => {
 	it('names what the entry says and leaves out what it does not', () => {
@@ -58,5 +58,17 @@ describe('evidenceUrl', () => {
 		expect(evidenceUrl({ evidence: { url: 'javascript:alert(1)' } })).toBeNull();
 		expect(evidenceUrl({})).toBeNull();
 		expect(evidenceUrl(null)).toBeNull();
+	});
+});
+
+describe('exportFileName', () => {
+	const day = new Date('2026-11-06T23:30:00Z');
+
+	it('names the day, in UTC', () => {
+		expect(exportFileName(day, false)).toBe('pacod-catalog-2026-11-06.json');
+	});
+
+	it('says when the file holds only some vendors', () => {
+		expect(exportFileName(day, true)).toBe('pacod-catalog-2026-11-06-partial.json');
 	});
 });

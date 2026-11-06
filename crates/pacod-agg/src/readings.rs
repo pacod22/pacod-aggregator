@@ -2,8 +2,9 @@
 //! server has its text read by the extraction model and keeps what the page says. Once every page
 //! of a vendor in the run was checked, the vendor settles into the catalogue.
 //!
-//! The extraction model is reached through an OpenAI-compatible endpoint (`AGG_LLM_URL`), usually
-//! a pacod-gw with a key of its own, so that its cost is accounted like any other call.
+//! The extraction model is reached through an OpenAI-compatible endpoint (`AGG_LLM_URL`): a
+//! provider's own, or a pacod-gw with a key of its own, where its cost is accounted like any other
+//! call. This is the only call of a model anywhere in the aggregator.
 //!
 //! Moved from pacod-gw (commit 50fe4b7, `crates/pacod-gw-core/src/mgmt/readings.rs`).
 
@@ -87,7 +88,7 @@ pub async fn reading(st: &AppState, run_id: &str, reading: &PageReading) -> ApiR
         ("unchanged", _) => rec.outcome = "unchanged".into(),
         _ => match reading.text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
             None => (rec.outcome, rec.message) = ("failed".into(), "the page has no text".into()),
-            Some(_) if !settings.can_extract() => {
+            Some(_) if st.config.extraction_model(&settings).is_none() => {
                 (rec.outcome, rec.message) = ("not_read".into(), "no extraction model is set".into());
             }
             Some(_) if st.config.llm.is_none() => {
@@ -317,14 +318,14 @@ async fn call_extraction(
     part: (usize, usize),
 ) -> Result<Value, String> {
     let link = st.config.llm.as_ref().ok_or("AGG_LLM_URL is not set")?;
-    let model = settings.extraction_model.as_deref().ok_or("no extraction model is set")?;
-    let body = json!({
+    let model = st.config.extraction_model(settings).ok_or("no extraction model is set")?;
+    let mut body = json!({
         "model": model,
         "messages": [{ "role": "user", "content": extraction_prompt(vendor, known, text, part) }],
         "response_format": { "type": "json_schema",
                              "json_schema": { "name": "price_page", "schema": extraction_schema(), "strict": true } },
-        "max_tokens": EXTRACTION_OUTPUT_TOKENS,
     });
+    body[link.limit_field] = json!(EXTRACTION_OUTPUT_TOKENS);
     let mut request = st.http.post(format!("{}/chat/completions", link.url)).timeout(EXTRACTION_TIMEOUT).json(&body);
     if let Some(key) = &link.key {
         request = request.bearer_auth(key);

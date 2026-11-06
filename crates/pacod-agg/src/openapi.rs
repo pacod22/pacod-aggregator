@@ -158,6 +158,15 @@ pub fn document() -> Value {
     doc.op("post", "/api/v1/pages/{id}/dismiss", op("pages", "Dismiss a page", 200, None, Some(page), &[]));
     doc.op("post", "/api/v1/pages/{id}/check", op("pages", "Check a page at the next run", 202, None, None, &[]));
 
+    // Declared by hand like every route: nothing compares the document with the router.
+    let vendors: &[(&str, &str, &str)] = &[("vendor", "string", "Vendor ids, comma separated.")];
+    let catalogue = Some(json!({ "type": "object" }));
+    doc.op(
+        "get",
+        "/api/v1/catalog",
+        op("catalog", "The catalogue, as /v1/catalog answers it", 200, None, catalogue, vendors),
+    );
+
     let (settings, settings_in) = (doc.schema::<SettingsView>(), doc.schema::<SettingsInput>());
     doc.op("get", "/api/v1/settings", op("settings", "The settings", 200, None, Some(settings.clone()), &[]));
     doc.op(

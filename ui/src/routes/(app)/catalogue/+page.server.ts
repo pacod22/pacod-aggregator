@@ -15,5 +15,5 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			})
 		)
 	]);
-	return { vendors, models, vendor, status };
+	return { vendors, models, vendor, status, exportFailed: url.searchParams.has('export_failed') };
 };

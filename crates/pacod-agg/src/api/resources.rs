@@ -235,6 +235,16 @@ pub struct SettingsView {
     #[serde(flatten)]
     pub settings: Settings,
     pub version: i32,
+    /// The operator's `AGG_LLM_MODEL`, used while `extraction_model` is empty. It is set in the
+    /// environment and cannot be changed here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extraction_model_default: Option<String>,
+}
+
+impl SettingsView {
+    fn of(st: &AppState, settings: Settings, version: i32) -> Self {
+        Self { settings, version, extraction_model_default: st.config.llm_model.clone() }
+    }
 }
 
 /// A change of the settings.
@@ -248,7 +258,7 @@ pub struct SettingsInput {
 
 async fn settings(State(st): State<AppState>, _: Reader) -> ApiResult<Json<SettingsView>> {
     let (settings, version) = st.settings().await?;
-    Ok(Json(SettingsView { settings, version }))
+    Ok(Json(SettingsView::of(&st, settings, version)))
 }
 
 async fn settings_save(
@@ -265,7 +275,7 @@ async fn settings_save(
         .settings_save(&doc, input.version)
         .await?
         .ok_or_else(|| ApiError::conflict("the settings changed in the meantime; load them again"))?;
-    Ok(Json(SettingsView { settings, version }))
+    Ok(Json(SettingsView::of(&st, settings, version)))
 }
 
 pub fn routes() -> Router<AppState> {

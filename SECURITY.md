@@ -1,7 +1,8 @@
 # Security policy
 
 pacod-aggregator renders pages of other people's sites in a browser, reads them with an LLM
-through a gateway key, and publishes what it found to gateways that apply it to their prices.
+through a provider's key or a gateway's, and publishes what it found to gateways that apply it to
+their prices.
 Reports of weaknesses are welcome and are handled privately until a fix is out.
 
 ## Reporting a vulnerability
@@ -17,7 +18,7 @@ Please include:
 - the steps to reproduce, and what happens compared with what should happen;
 - whether you have told anyone else.
 
-Never send real gateway keys or tokens that are not yours. Placeholders are enough.
+Never send real API keys or tokens that are not yours. Placeholders are enough.
 
 ## What happens next
 

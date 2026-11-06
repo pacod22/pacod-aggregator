@@ -49,6 +49,9 @@ The catalogue API, in short:
 It needs a token with `agg.catalog.read`, unless `AGG_CATALOG_PUBLIC` opens it.
 [docs/openapi.json](docs/openapi.json) is the whole of it.
 
+The console's **Catalogue** page exports the same catalogue as a JSON file, whole or for chosen
+vendors. It comes from `GET /api/v1/catalog` on the admin API, for anyone with `agg.data.read`.
+
 ## Running it
 
 Docker Compose and GNU Make are all it needs.

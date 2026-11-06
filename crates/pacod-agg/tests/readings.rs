@@ -61,7 +61,7 @@ async fn server(adjust: impl FnOnce(&mut Config)) -> (Server, Llm) {
     let llm = Llm::default();
     let url = llm.url().await;
     let s = Server::start(|c| {
-        c.llm = Some(LlmLink { url, key: Some(KEY.into()) });
+        c.llm = Some(LlmLink::new(url, Some(KEY.into())));
         adjust(c);
     })
     .await;
@@ -577,6 +577,51 @@ async fn without_a_model_or_an_address_pages_wait() {
     assert_eq!((r["outcome"].as_str(), r["message"].as_str()), (Some("not_read"), Some("AGG_LLM_URL is not set")));
     assert_eq!(llm.calls(), 0);
     assert!(s.api("GET", "/status", None).await.1["problems"].to_string().contains("AGG_LLM_URL"));
+}
+
+#[tokio::test]
+async fn the_environment_names_the_model_until_the_console_does() {
+    let llm = Llm::default();
+    let url = llm.url().await;
+    let s = Server::start(|c| {
+        c.llm = Some(LlmLink::new(url, Some(KEY.into())));
+        c.llm_model = Some("from-env".into());
+    })
+    .await;
+    s.only_vendor("openai").await;
+    let page = s.add_page("openai", "https://openai.example/pricing").await;
+    assert_eq!(s.api("GET", "/status", None).await.1["extraction"], true, "no console setting is needed");
+
+    let id = run(&s).await;
+    read(&s, &id, changed(&page, "h1")).await;
+    finish(&s, &id).await;
+    set_model(&s).await;
+    let id = check_again(&s).await;
+    read(&s, &id, changed(&page, "h2")).await;
+    finish(&s, &id).await;
+    let (_, mut settings) = s.api("GET", "/settings", None).await;
+    settings["extraction_model"] = Value::Null;
+    assert_eq!(s.api("PUT", "/settings", Some(settings)).await.0, 200);
+    let id = check_again(&s).await;
+    read(&s, &id, changed(&page, "h3")).await;
+
+    let calls = llm.calls.lock().unwrap();
+    let models: Vec<&str> = calls.iter().map(|(body, _)| body["model"].as_str().unwrap()).collect();
+    assert_eq!(models, ["from-env", "reader", "from-env"]);
+}
+
+#[tokio::test]
+async fn the_limit_on_an_answer_goes_under_the_name_the_endpoint_takes() {
+    for (field, other) in [("max_tokens", "max_completion_tokens"), ("max_completion_tokens", "max_tokens")] {
+        let (s, llm) = server(|c| c.llm.as_mut().unwrap().limit_field = field).await;
+        let page = s.add_page("openai", "https://openai.example/pricing").await;
+        let id = run(&s).await;
+        read(&s, &id, changed(&page, "h1")).await;
+        let calls = llm.calls.lock().unwrap();
+        let body = &calls[0].0;
+        assert_eq!(body[field], 16_000, "{body}");
+        assert!(body.get(other).is_none(), "{body}");
+    }
 }
 
 #[tokio::test]

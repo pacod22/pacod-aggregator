@@ -88,7 +88,7 @@ impl Config {
         for (name, value) in [("AGG_SERVER_URL", &self.server_url), ("AGG_SCRAPER_BROWSER_URL", &self.browser_url)] {
             let url = url::Url::parse(value).with_context(|| format!("{name} is not a URL: {value}"))?;
             if url.scheme() != "http" {
-                bail!("{name} is an http:// address on the gateway's own networks: {value}");
+                bail!("{name} is an http:// address on the aggregator's own networks: {value}");
             }
         }
         if self.proxy_listen.rsplit_once(':').is_none_or(|(h, p)| h.is_empty() || p.parse::<u16>().is_err()) {

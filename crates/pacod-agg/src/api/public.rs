@@ -17,7 +17,7 @@ use crate::catalog::{self, model_of, vendor_of};
 use crate::store::models::{ModelFilter, PriceRow};
 
 #[derive(Debug, Default, Deserialize)]
-struct CatalogQuery {
+pub(super) struct CatalogQuery {
     /// Vendor ids, comma separated.
     vendor: Option<String>,
 }
@@ -37,14 +37,10 @@ fn etag(catalog: &Catalog) -> Result<String, serde_json::Error> {
 }
 
 /// The whole catalogue in version 1, or the vendors named. Answers 304 to the tag it was last read
-/// with, so that a daily reader fetches it only when it changed.
-async fn catalogue(
-    State(st): State<AppState>,
-    _: CatalogReader,
-    headers: HeaderMap,
-    Query(q): Query<CatalogQuery>,
-) -> ApiResult<Response> {
-    let names = vendors_named(&q);
+/// with, so that a daily reader fetches it only when it changed. The console's export comes from
+/// here too, so that a file and this API cannot come to differ.
+pub(super) async fn catalogue_answer(st: &AppState, q: &CatalogQuery, headers: &HeaderMap) -> ApiResult<Response> {
+    let names = vendors_named(q);
     let catalog = catalog::catalog(&st.store, names.as_deref(), st.config.public_url.clone()).await?;
     let internal = |e: serde_json::Error| ApiError::invalid(e.to_string());
     let tag = etag(&catalog).map_err(internal)?;
@@ -58,6 +54,15 @@ async fn catalogue(
     }
     let body = serde_json::to_vec(&catalog).map_err(internal)?;
     Ok(([(ETAG, value), (CONTENT_TYPE, HeaderValue::from_static("application/json"))], body).into_response())
+}
+
+async fn catalogue(
+    State(st): State<AppState>,
+    _: CatalogReader,
+    headers: HeaderMap,
+    Query(q): Query<CatalogQuery>,
+) -> ApiResult<Response> {
+    catalogue_answer(&st, &q, &headers).await
 }
 
 async fn vendors(State(st): State<AppState>, _: CatalogReader) -> ApiResult<Json<Vec<Vendor>>> {

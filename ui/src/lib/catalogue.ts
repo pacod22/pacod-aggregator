@@ -62,3 +62,12 @@ export function evidenceUrl(price: unknown): string | null {
 	const url = (price as { evidence?: { url?: unknown } } | null | undefined)?.evidence?.url;
 	return typeof url === 'string' && /^https?:\/\//.test(url) ? url : null;
 }
+
+/**
+ * The name of an exported catalogue. A file of chosen vendors says so, so that it is not taken for
+ * the whole catalogue later: a gateway that loads it would know nothing of the others.
+ */
+export function exportFileName(date: Date, chosenVendors: boolean): string {
+	const day = date.toISOString().slice(0, 10);
+	return `pacod-catalog-${day}${chosenVendors ? '-partial' : ''}.json`;
+}

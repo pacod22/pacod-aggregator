@@ -1,7 +1,8 @@
 //! The admin API, for the console.
 
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use pacod_agg_jobs::jobs::{JOB_CHECK, JOB_SCAN};
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::auth::{Manager, Principal, Reader};
+use super::public::{CatalogQuery, catalogue_answer};
 use super::{ApiError, ApiResult, AppState};
 use crate::catalog::model_of;
 use crate::jobs::{self, StatusView};
@@ -167,9 +169,21 @@ async fn changes(State(st): State<AppState>, _: Reader, Query(q): Query<ChangesQ
     Ok(Json(st.store.changes(None, q.limit.unwrap_or(100).clamp(1, 500)).await?))
 }
 
+/// The catalogue as `GET /v1/catalog` answers it, for the console's export: the console reaches
+/// this listener only, and its people hold `agg.data.read`, not a reader's token.
+async fn catalogue(
+    State(st): State<AppState>,
+    _: Reader,
+    headers: HeaderMap,
+    Query(q): Query<CatalogQuery>,
+) -> ApiResult<Response> {
+    catalogue_answer(&st, &q, &headers).await
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/session", get(session))
+        .route("/catalog", get(catalogue))
         .route("/models", get(models))
         .route("/models/{id}", get(model))
         .route("/changes", get(changes))

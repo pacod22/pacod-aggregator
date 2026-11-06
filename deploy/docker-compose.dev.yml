@@ -36,9 +36,12 @@ services:
       AGG_ID_CLIENT_SECRET: dev-only-agg-service-secret-0123456789
       AGG_PUBLIC_URL: http://127.0.0.1:18150
       AGG_INTERNAL_TOKEN: dev-only-agg-internal-token-0123456789
-      # The mock reads the pages; the real thing is a pacod-gw with a key of its own.
+      # The mock reads the pages; the real thing is a provider's endpoint or a pacod-gw, with a key
+      # of its own. The model comes from here alone, so that "make smoke" proves that this is enough.
       AGG_LLM_URL: http://agg-mock:9100/v1
       AGG_LLM_KEY: ""
+      AGG_LLM_MODEL: mock-reader
+      AGG_LLM_MAX_TOKENS_FIELD: ""
       AGG_EGRESS_ALLOW_PRIVATE: agg-mock
     ports:
       - "127.0.0.1:18150:8150"

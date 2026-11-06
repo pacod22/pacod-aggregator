@@ -80,7 +80,7 @@ async fn check_work(st: &AppState, settings: &Settings, pages: &[String]) -> Api
             known_models: known[&page.vendor_id].clone(),
         });
     }
-    Ok(CheckWork { pages: tasks, extraction: settings.can_extract() })
+    Ok(CheckWork { pages: tasks, extraction: st.config.can_read(settings) })
 }
 
 /// Where the scan starts for a vendor: its active pages and the pages it is seeded with, except
@@ -447,8 +447,12 @@ fn problems(st: &AppState, s: &Settings, scraper: &ScraperView, pages: &[Page], 
         out.push(format!("The scraper cannot reach its browser: {}.", b.message.trim_end_matches('.')));
     }
     let reads_pages = active(pages, vendors).any(|p| p.kind == "page");
-    if reads_pages && !s.can_extract() {
-        out.push("No extraction model is set: pages are checked, but nothing reads them.".into());
+    if reads_pages && st.config.extraction_model(s).is_none() {
+        out.push(
+            "No extraction model is set, in the settings or as AGG_LLM_MODEL: pages are checked, but nothing \
+             reads them."
+                .into(),
+        );
     }
     if reads_pages && st.config.llm.is_none() {
         out.push("AGG_LLM_URL is not set: pages are checked, but no model can be called.".into());
@@ -482,7 +486,7 @@ pub async fn status(st: &AppState) -> ApiResult<StatusView> {
     Ok(StatusView {
         check,
         scan,
-        extraction: settings.can_extract() && st.config.llm.is_some(),
+        extraction: st.config.can_read(&settings),
         proposed_pages: pages.iter().filter(|p| p.status == "proposed").count(),
         scraper,
         problems,

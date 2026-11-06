@@ -139,6 +139,24 @@ async fn the_settings_keep_their_version() {
 }
 
 #[tokio::test]
+async fn the_operators_model_shows_and_is_not_stored() {
+    let without = Server::start(|_| {}).await;
+    assert!(without.api("GET", "/settings", None).await.1.get("extraction_model_default").is_none());
+
+    let s = Server::start(|c| c.llm_model = Some("from-env".into())).await;
+    let (_, mut view) = s.api("GET", "/settings", None).await;
+    assert_eq!(view["extraction_model_default"], "from-env", "{view}");
+    assert!(view.get("extraction_model").is_none(), "{view}");
+    // A client that sends the view back changes nothing with it.
+    view["extraction_model_default"] = json!("from-a-caller");
+    let (st, saved) = s.api("PUT", "/settings", Some(view)).await;
+    assert_eq!((st, saved["extraction_model_default"].as_str()), (200, Some("from-env")), "{saved}");
+    let stored: serde_json::Value =
+        sqlx::query_scalar("SELECT doc FROM settings").fetch_one(s.store.pool()).await.unwrap();
+    assert!(stored.get("extraction_model_default").is_none(), "{stored}");
+}
+
+#[tokio::test]
 async fn vendors_are_named_as_the_catalogue_names_them() {
     let s = Server::start(|_| {}).await;
     let v = |id: &str| json!({ "id": id, "display_name": "New", "sites": ["https://example.com/pricing/"] });

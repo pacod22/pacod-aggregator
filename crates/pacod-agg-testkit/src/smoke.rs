@@ -236,6 +236,22 @@ async fn console(s: &Smoke) -> anyhow::Result<()> {
     }
     step("every page of the console shows", &format!("{} pages", pages.len()));
 
+    // Ticked boxes, as the form sends them: what a gateway reads from the file is what it reads
+    // from the API.
+    let list = vendors.as_array().context("the vendors are not a list")?;
+    let names: Vec<&str> =
+        list.iter().filter(|v| v["enabled"] == true).filter_map(|v| v["id"].as_str()).take(2).collect();
+    let ticked: Vec<(&str, &str)> = names.iter().map(|name| ("vendor", *name)).collect();
+    let r = http.get(format!("{base}/catalogue/export")).query(&ticked).header("cookie", &session).send().await?;
+    let status = r.status();
+    let file_name = r.headers().get("content-disposition").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+    ensure!(status == 200 && file_name.starts_with("attachment"), "the export answered {status}, {file_name:?}");
+    let file = parse(&r.bytes().await?, Some(Format::Catalog)).context("reading the export")?;
+    let (api, _) = s.catalog(&names.join(",")).await?;
+    let undated = |c: Catalog| Catalog { generated_at: None, ..c };
+    ensure!(undated(file) == undated(api), "the export is not what /v1/catalog answers");
+    step("the console exports the catalogue as the API serves it", &file_name);
+
     let post = |action: &str, origin: &str| {
         let url = format!("{base}{action}");
         http.post(url).header("cookie", &session).header("origin", origin.to_owned())
@@ -250,6 +266,9 @@ async fn console(s: &Smoke) -> anyhow::Result<()> {
 
     // The settings form holds every setting: saved as it stands, nothing may change.
     let (_, before) = s.api("GET", "/settings", None).await?;
+    let page = http.get(format!("{base}/settings")).header("cookie", &session).send().await?.text().await?;
+    let named = before["extraction_model_default"].as_str().is_none_or(|model| page.contains(model));
+    ensure!(named, "the settings page does not say which model is in use");
     let joined = |v: &Value| {
         v.as_array().map_or(String::new(), |list| list.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "))
     };
@@ -298,7 +317,10 @@ async fn walk(s: &Smoke, vendor: &str, mut settings: Value) -> anyhow::Result<()
         .await?;
     step("a scraper runs and reaches its browser", status["scraper"]["browser"]["product"].as_str().unwrap_or(""));
 
-    settings["extraction_model"] = json!("mock-reader");
+    // The model in the environment reads the pages where there is one, with nothing named in the
+    // console: all that running from `deploy/.env` alone takes.
+    let from_the_environment = settings["extraction_model_default"].is_string();
+    settings["extraction_model"] = if from_the_environment { Value::Null } else { json!("mock-reader") };
     // The mock's pages are short, and the new vendor has no models yet that would add to their
     // score: the threshold is for the real vendors' pages.
     settings["scan"]["min_score"] = json!(4.0);

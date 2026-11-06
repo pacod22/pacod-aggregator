@@ -9,7 +9,7 @@ checked.
 | Asset | Why |
 |---|---|
 | The catalogue's integrity | Gateways apply its prices and retire models by it. |
-| `AGG_LLM_KEY` | A gateway key, which costs money and carries a gateway's permissions. |
+| `AGG_LLM_KEY` | The key of the model endpoint, a provider's or a gateway's, which costs money and carries that account's permissions. |
 | The internal network | The scraper's browser runs other people's scripts on a host inside it. |
 | Administrators' sessions | They decide which pages are read. |
 
