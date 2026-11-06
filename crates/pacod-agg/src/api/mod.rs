@@ -3,6 +3,7 @@
 
 pub mod admin;
 pub mod auth;
+pub mod internal;
 pub mod public;
 pub mod resources;
 
@@ -137,5 +138,5 @@ pub fn public_router(state: AppState) -> Router {
 
 /// The listener on `pacod-admin-net`: the console's API, and the scraper's.
 pub fn admin_router(state: AppState) -> Router {
-    probes().nest("/api/v1", admin::routes()).with_state(state)
+    probes().nest("/api/v1", admin::routes()).nest("/internal/v1", internal::routes()).with_state(state)
 }

@@ -1,6 +1,7 @@
 //! The aggregator's database (PostgreSQL, database `pacod_agg`). The only SQL.
 
 pub mod jobs;
+pub mod models;
 pub mod pages;
 pub mod settings;
 pub mod vendors;

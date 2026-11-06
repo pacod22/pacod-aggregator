@@ -37,6 +37,139 @@
         }
       }
     },
+    "/api/v1/status": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Jobs, the scraper and what is wrong",
+        "operationId": "get_api_v1_status",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Runs, newest first",
+        "operationId": "get_api_v1_runs",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobRun"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "job",
+            "in": "query",
+            "required": false,
+            "description": "check or scan; both by default.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "How many, 30 by default.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/runs/check": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Check every page now",
+        "operationId": "post_api_v1_runs_check",
+        "responses": {
+          "202": {
+            "description": "Done"
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/scan": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Scan every vendor's site now",
+        "operationId": "post_api_v1_runs_scan",
+        "responses": {
+          "202": {
+            "description": "Done"
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/vendors": {
       "get": {
         "tags": [
@@ -691,6 +824,204 @@
           "type",
           "message"
         ]
+      },
+      "StatusView": {
+        "type": "object",
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/JobView"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/JobView"
+          },
+          "scraper": {
+            "$ref": "#/components/schemas/ScraperView"
+          },
+          "extraction": {
+            "type": "boolean",
+            "description": "Whether pages can be read: the operator set the model's address, and a model is named."
+          },
+          "proposed_pages": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "description": "Pages waiting to be confirmed."
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What keeps the aggregator from doing its work, in sentences."
+          }
+        },
+        "required": [
+          "check",
+          "scan",
+          "scraper",
+          "extraction",
+          "proposed_pages",
+          "problems"
+        ],
+        "description": "What the Overview shows."
+      },
+      "JobView": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string"
+          },
+          "last_started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "next_run_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The next scheduled start. Absent while the jobs are switched off."
+          },
+          "run_requested": {
+            "type": "boolean",
+            "description": "A run was asked for and has not started yet."
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobRun"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last run that finished."
+          }
+        },
+        "required": [
+          "schedule",
+          "run_requested",
+          "running"
+        ],
+        "description": "One of the scraper's jobs as the console shows it."
+      },
+      "JobRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "job": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string",
+            "description": "`schedule`, `manual`, `page` (a page was confirmed or asked to be checked) or `retry` (the\nrun before was left open)."
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Absent while the run is in progress."
+          },
+          "message": {
+            "type": "string"
+          },
+          "result": true,
+          "covers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the run covers, by id: the pages of a check, the vendors of a scan."
+          }
+        },
+        "required": [
+          "id",
+          "job",
+          "trigger",
+          "started_at",
+          "message",
+          "result",
+          "covers"
+        ],
+        "description": "One run of a job."
+      },
+      "ScraperView": {
+        "type": "object",
+        "properties": {
+          "last_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When a scraper last asked for work."
+          },
+          "present": {
+            "type": "boolean",
+            "description": "Whether one asked in the last five minutes."
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "browser": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrowserView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "present"
+        ],
+        "description": "Whether a scraper runs, as far as the server can tell: it asks for work every half minute."
+      },
+      "BrowserView": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "product": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "product",
+          "message"
+        ],
+        "description": "The browser the scraper renders pages in, as the scraper last reported it."
       },
       "Vendor": {
         "type": "object",

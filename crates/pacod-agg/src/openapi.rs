@@ -10,6 +10,8 @@ use serde_json::{Map, Value, json};
 use crate::api::ErrorBody;
 use crate::api::admin::Session;
 use crate::api::resources::{PageView, SettingsInput, SettingsView};
+use crate::jobs::StatusView;
+use crate::store::jobs::JobRun;
 use crate::store::pages::PageInput;
 use crate::store::vendors::{Vendor, VendorInput};
 
@@ -85,6 +87,15 @@ pub fn document() -> Value {
 
     let session = doc.schema::<Session>();
     doc.op("get", "/api/v1/session", op("admin", "Who is calling", 200, None, Some(session), &[]));
+
+    let status = doc.schema::<StatusView>();
+    doc.op("get", "/api/v1/status", op("admin", "Jobs, the scraper and what is wrong", 200, None, Some(status), &[]));
+    let run = doc.schema::<JobRun>();
+    let filters: &[(&str, &str, &str)] =
+        &[("job", "string", "check or scan; both by default."), ("limit", "integer", "How many, 30 by default.")];
+    doc.op("get", "/api/v1/runs", op("runs", "Runs, newest first", 200, None, list(run), filters));
+    doc.op("post", "/api/v1/runs/check", op("runs", "Check every page now", 202, None, None, &[]));
+    doc.op("post", "/api/v1/runs/scan", op("runs", "Scan every vendor's site now", 202, None, None, &[]));
 
     let (vendor, vendor_in) = (doc.schema::<Vendor>(), doc.schema::<VendorInput>());
     doc.op("get", "/api/v1/vendors", op("vendors", "The vendors", 200, None, list(vendor.clone()), &[]));

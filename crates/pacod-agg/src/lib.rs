@@ -15,6 +15,7 @@ use tokio::sync::watch;
 pub mod api;
 pub mod config;
 pub mod identity;
+pub mod jobs;
 pub mod metrics;
 pub mod openapi;
 pub mod schedule;
@@ -84,6 +85,19 @@ async fn bind(what: &str, addr: &str) -> anyhow::Result<TcpListener> {
     Err(anyhow::anyhow!("{what} {addr}: {}", last.map_or("no address".into(), |e| e.to_string())))
 }
 
+/// Housekeeping: closes runs a scraper left open, once a minute.
+async fn upkeep(state: AppState, mut stop: watch::Receiver<bool>) {
+    loop {
+        tokio::select! {
+            () = tokio::time::sleep(Duration::from_secs(60)) => {}
+            _ = stop.changed() => return,
+        }
+        if let Err(e) = jobs::close_lapsed(&state).await {
+            tracing::warn!(error = %e.message, "closing the runs left open failed");
+        }
+    }
+}
+
 /// `pacod-agg serve`: listens until `shutdown` resolves.
 pub async fn serve(config: Config, shutdown: impl Future<Output = ()> + Send + 'static) -> anyhow::Result<()> {
     let config = Arc::new(config);
@@ -100,6 +114,7 @@ pub async fn serve(config: Config, shutdown: impl Future<Output = ()> + Send + '
         servers
             .push(tokio::spawn(axum::serve(listener, router).with_graceful_shutdown(wait(stop.clone())).into_future()));
     }
+    tokio::spawn(upkeep(app.state.clone(), stop.clone()));
     let listener = bind("AGG_ADMIN_LISTEN", &config.admin_listen).await?;
     servers
         .push(tokio::spawn(axum::serve(listener, app.admin).with_graceful_shutdown(wait(stop.clone())).into_future()));
