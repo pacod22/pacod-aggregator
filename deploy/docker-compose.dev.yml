@@ -14,6 +14,12 @@
 #
 # Sign in at http://localhost:13150 as admin@pacod-aggregator.test / pacod-aggregator-dev.
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   pacod-aggregator:
     image: pacod-agg:dev
@@ -53,6 +59,14 @@ services:
   agg-browser:
     image: pacod-agg-browser:dev
 
+  agg-console:
+    image: pacod-agg-console:dev
+    environment:
+      AGG_CONSOLE_URL: http://localhost:13150
+      AGG_ID_ISSUER: http://127.0.0.1:18372
+      AGG_UI_CLIENT_SECRET: dev-only-agg-ui-secret-0123456789abcd
+      AGG_UI_SESSION_SECRET: dev-only-agg-ui-session-secret-0123456789
+
   # A vendor's site and an extraction model.
   agg-mock:
     image: pacod-agg-mock:dev
@@ -68,6 +82,7 @@ services:
     environment:
       SERVICE_NAME: agg-mock
       AGG_LOG_FORMAT: text
+    logging: *logging
     healthcheck:
       test: ["CMD", "/usr/local/bin/healthcheck", "http://127.0.0.1:9100/healthz"]
       interval: 5s
@@ -100,7 +115,7 @@ services:
       AGG_ID_CLIENT_SECRET: dev-only-agg-service-secret-0123456789
       AGG_UI_CLIENT_SECRET: dev-only-agg-ui-secret-0123456789abcd
       AGG_ID_ISSUER: http://127.0.0.1:18372
-      AGG_ORIGIN: http://localhost:13150
+      AGG_CONSOLE_URL: http://localhost:13150
       PID_BOOTSTRAP_ADMIN_EMAIL: admin@pacod-aggregator.test
       PID_BOOTSTRAP_ADMIN_PASSWORD: pacod-aggregator-dev
     volumes: !override

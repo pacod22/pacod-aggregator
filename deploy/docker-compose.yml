@@ -4,6 +4,7 @@
 #                     pacod-admin-net only), metrics (9150)
 #   agg-scraper       renders the vendors' pages, checks them daily and scans their sites weekly
 #   agg-browser       the scraper's headless browser, reachable from the scraper alone
+#   agg-console       the console (3000), behind pacod-caddy
 #
 # The shared components (pacod-postgres, pacod-id, pacod-caddy, pacod-prometheus, pacod-grafana)
 # come from docker-compose.standalone.yml in the aggregator's own stack, or from the full stack
@@ -189,6 +190,49 @@ services:
       resources:
         # One page at a time; a heavy page takes the browser to about 700 MB.
         limits: { cpus: "1.0", memory: 1G }
+
+  # The console: a server of its own that signs people in through pacod-id and calls the admin API
+  # with their token. The browser reaches neither of those listeners, only this one, through
+  # pacod-caddy.
+  agg-console:
+    <<: *locked-down
+    image: ${AGG_REGISTRY:-}pacod-agg-console:${AGG_VERSION:-0.1.0}
+    build:
+      context: ..
+      dockerfile: deploy/docker/ui.Dockerfile
+      target: ui
+      args:
+        VERSION: ${AGG_VERSION:-0.1.0}
+    container_name: agg-console
+    environment:
+      SERVICE_NAME: agg-console
+      AGG_CONSOLE_API_URL: http://pacod-aggregator-admin:8151
+      AGG_CONSOLE_URL: ${AGG_CONSOLE_URL:-}
+      AGG_ID_ISSUER: ${AGG_ID_ISSUER:-}
+      AGG_ID_INTERNAL_URL: http://pacod-id-internal:8071
+      AGG_UI_CLIENT_ID: ${AGG_UI_CLIENT_ID:-pacod-agg-ui}
+      AGG_UI_CLIENT_SECRET: ${AGG_UI_CLIENT_SECRET:-}
+      AGG_UI_SESSION_SECRET: ${AGG_UI_SESSION_SECRET:-}
+      # adapter-node 6 has no ORIGIN setting: it takes the scheme and the client from Caddy.
+      PROTOCOL_HEADER: x-forwarded-proto
+      ADDRESS_HEADER: x-forwarded-for
+    tmpfs:
+      - /tmp:size=16m
+    healthcheck:
+      # A static file: it answers without a session or the server behind it.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/robots.txt"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
+    depends_on:
+      pacod-aggregator: { condition: service_healthy }
+    networks: [pacod-net, pacod-admin-net]
+    logging: *logging
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
 
 # The first two are shared by every pacod stack on this host; "make network" creates them.
 networks:

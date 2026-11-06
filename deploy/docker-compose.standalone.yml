@@ -57,8 +57,8 @@ services:
     restart: "no"
 
   pacod-id:
-    # Built from vendor/pacod-id by "make images"; not pacod-id:dev, which pacod-gw builds from its
-    # own vendored copy.
+    # Built from vendor/pacod-id when the image is missing; not pacod-id:dev, which pacod-gw builds
+    # from its own vendored copy.
     image: ${PACOD_ID_IMAGE:-pacod-agg-id:dev}
     build:
       context: ../vendor/pacod-id
@@ -81,7 +81,7 @@ services:
       # The issuer is the address browsers use; pacod-id answers its sign-in pages only on that
       # exact host and port.
       AGG_ID_ISSUER: ${AGG_ID_ISSUER:-http://127.0.0.1:18372}
-      AGG_ORIGIN: ${AGG_ORIGIN:-http://localhost:13150}
+      AGG_CONSOLE_URL: ${AGG_CONSOLE_URL:-http://localhost:13150}
       PID_TRUSTED_PROXIES: ${PID_TRUSTED_PROXIES:-}
       # The first account, created once: an identity admin and aggregator admin.
       PID_BOOTSTRAP_ADMIN_EMAIL: ${ID_ADMIN_EMAIL:-admin@pacod-aggregator.test}

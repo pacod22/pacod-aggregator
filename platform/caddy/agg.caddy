@@ -8,6 +8,7 @@
 #
 # The admin and internal API (8151) and the metrics (9150) are never published through the edge:
 # the console and the scraper reach the API on pacod-admin-net, Prometheus scrapes on pacod-net.
+# The console's own server sits behind AGG_SITE, so a person's browser reaches neither.
 
 (agg_access_log) {
 	log {

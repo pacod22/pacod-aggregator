@@ -11,7 +11,7 @@ use pacod_agg_catalog::{Catalog, Format, Found, parse};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
-use crate::oidc::{IdClient, Session};
+use crate::oidc::{self, IdClient, Session};
 
 /// Where the stack is. The defaults are the development stack's.
 pub struct Options {
@@ -25,6 +25,8 @@ pub struct Options {
     pub mock_control: String,
     /// The metrics, as this program reaches them.
     pub metrics: String,
+    /// The console, as a browser reaches it.
+    pub console: String,
     /// A token to call with (`AGG_AUTH=dev`). Without one, the test signs in at `issuer`.
     pub token: Option<String>,
     pub issuer: String,
@@ -41,6 +43,7 @@ impl Options {
             mock: var("SMOKE_MOCK_URL", "http://agg-mock:9100"),
             mock_control: var("SMOKE_MOCK_CONTROL_URL", "http://127.0.0.1:19100"),
             metrics: var("SMOKE_METRICS_URL", "http://127.0.0.1:19150/metrics"),
+            console: var("SMOKE_CONSOLE_URL", "http://localhost:13150"),
             token: std::env::var("SMOKE_TOKEN").ok().filter(|t| !t.is_empty()),
             issuer: var("SMOKE_ID_ISSUER", "http://127.0.0.1:18372"),
             email: var("SMOKE_EMAIL", "admin@pacod-aggregator.test"),
@@ -169,7 +172,117 @@ pub async fn run(o: Options) -> anyhow::Result<()> {
     before["version"] = s.api("GET", "/settings", None).await?.1["version"].clone();
     let (st, v) = s.api("PUT", "/settings", Some(before)).await?;
     ensure!(st == 200 || result.is_err(), "putting the settings back answered {st}: {v}");
-    result
+    result?;
+    // A person signs in to the console; a token stands for nobody who could.
+    if matches!(s.caller, Caller::Person(_)) {
+        console(&s).await?;
+    }
+    println!("all steps passed");
+    Ok(())
+}
+
+/// The value of a redirect's `location` header.
+fn location(r: &reqwest::Response) -> anyhow::Result<String> {
+    let to = r.headers().get("location").with_context(|| format!("{} carries no redirect", r.status()))?;
+    Ok(to.to_str()?.to_owned())
+}
+
+/// The console as a browser uses it: the sign-in with its own client, every page against the real
+/// server, and forms that reach it. A page that type-checks can still fail on what the server
+/// really sends, and only a posted form shows that the fields map onto the API.
+async fn console(s: &Smoke) -> anyhow::Result<()> {
+    let base = s.o.console.trim_end_matches('/');
+    let issuer = s.o.issuer.trim_end_matches('/');
+    let http = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(30))
+        .build()?;
+
+    let r = http.get(format!("{base}/catalogue")).send().await?;
+    let to = location(&r)?;
+    ensure!(r.status() == 303 && to.starts_with("/auth/login"), "without a session the console sent {to}");
+    let r = http.get(format!("{base}{to}")).send().await?;
+    let started = oidc::cookies(&r);
+    let authorize = location(&r)?;
+    ensure!(authorize.starts_with(&format!("{issuer}/oidc/authorize")), "the sign-in went to {authorize}");
+    ensure!(authorize.contains("client_id=pacod-agg-ui"), "the sign-in names another client: {authorize}");
+    let back = oidc::walk(&http, issuer, &authorize, &s.o.email, &s.o.password).await?;
+    ensure!(back.starts_with(&format!("{base}/auth/callback")), "pacod-id sent the browser to {back}");
+    let r = http.get(&back).header("cookie", started).send().await?;
+    ensure!(r.status().is_redirection(), "the callback answered {}", r.status());
+    let session = oidc::cookies(&r);
+    ensure!(session.contains("agg_session"), "the callback set no session");
+    step("a person signs in to the console", "");
+
+    let (_, models) = s.api("GET", "/models?limit=1", None).await?;
+    let model = models["items"][0]["id"].as_str().context("the catalogue is empty")?;
+    let (_, vendors) = s.api("GET", "/vendors", None).await?;
+    let vendor = vendors[0]["id"].as_str().context("there is no vendor")?;
+    let pages = [
+        ("/".to_owned(), "Scraper"),
+        ("/catalogue".to_owned(), "Catalogue"),
+        (format!("/catalogue/{model}"), "Properties"),
+        ("/vendors".to_owned(), "Vendors"),
+        (format!("/vendors/{vendor}"), "its models"),
+        ("/pages".to_owned(), "Pages"),
+        ("/runs".to_owned(), "Latest changes"),
+        ("/settings".to_owned(), "Schedules"),
+    ];
+    for (path, says) in &pages {
+        let r = http.get(format!("{base}{path}")).header("cookie", &session).send().await?;
+        let status = r.status();
+        let body = r.text().await?;
+        ensure!(status == 200 && body.contains(says), "{path} answered {status} without {says:?}");
+    }
+    step("every page of the console shows", &format!("{} pages", pages.len()));
+
+    let post = |action: &str, origin: &str| {
+        let url = format!("{base}{action}");
+        http.post(url).header("cookie", &session).header("origin", origin.to_owned())
+    };
+    let r = post("/runs?/check", "https://elsewhere.example").form(&[("x", "y")]).send().await?;
+    ensure!(r.status() == 403, "a form from elsewhere answered {}", r.status());
+    let r = post("/runs?/check", base).form(&[("x", "y")]).send().await?;
+    let status = r.status();
+    let body = r.text().await?;
+    ensure!(status == 200 && body.contains("A check is asked for"), "the console's own form answered {status}");
+    step("a form works, and one from elsewhere is refused", "");
+
+    // The settings form holds every setting: saved as it stands, nothing may change.
+    let (_, before) = s.api("GET", "/settings", None).await?;
+    let joined = |v: &Value| {
+        v.as_array().map_or(String::new(), |list| list.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "))
+    };
+    let shown = |v: &Value| v.as_str().map_or_else(|| v.to_string(), str::to_owned);
+    let mut fields = vec![
+        ("version".to_owned(), shown(&before["version"])),
+        ("schedule".to_owned(), shown(&before["schedule"])),
+        ("scan_schedule".to_owned(), shown(&before["scan_schedule"])),
+        ("time_zone".to_owned(), shown(&before["time_zone"])),
+        ("extraction_context_window".to_owned(), shown(&before["extraction_context_window"])),
+        ("max_extractions_per_run".to_owned(), shown(&before["max_extractions_per_run"])),
+        ("max_pages_per_vendor".to_owned(), shown(&before["scan"]["max_pages_per_vendor"])),
+        ("min_score".to_owned(), shown(&before["scan"]["min_score"])),
+        ("keywords".to_owned(), joined(&before["scan"]["keywords"])),
+        ("openrouter_price_vendors".to_owned(), joined(&before["openrouter_price_vendors"])),
+    ];
+    if before["enabled"] == true {
+        fields.push(("enabled".to_owned(), "on".to_owned()));
+    }
+    if let Some(model) = before["extraction_model"].as_str() {
+        fields.push(("extraction_model".to_owned(), model.to_owned()));
+    }
+    let r = post("/settings?/save", base).form(&fields).send().await?;
+    let status = r.status();
+    let body = r.text().await?;
+    ensure!(status == 200 && body.contains("The settings are saved"), "saving the form answered {status}");
+    let (_, mut after) = s.api("GET", "/settings", None).await?;
+    let version = after["version"].as_i64().unwrap_or_default();
+    ensure!(version == before["version"].as_i64().unwrap_or_default() + 1, "the form changed no version: {after}");
+    after["version"] = before["version"].clone();
+    ensure!(after == before, "the form changed the settings:\n{before}\n{after}");
+    step("the settings form says what the server holds", "");
+    Ok(())
 }
 
 async fn walk(s: &Smoke, vendor: &str, mut settings: Value) -> anyhow::Result<()> {
@@ -288,6 +401,5 @@ async fn walk(s: &Smoke, vendor: &str, mut settings: Value) -> anyhow::Result<()
         ensure!(metrics.lines().any(|l| l.starts_with(series)), "the metrics have no {series}");
     }
     step("the series the alerts read are there", "");
-    println!("all steps passed");
     Ok(())
 }

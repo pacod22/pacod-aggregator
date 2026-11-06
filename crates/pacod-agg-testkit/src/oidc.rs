@@ -38,6 +38,42 @@ fn query(url: &str, base: &str, name: &str) -> Option<String> {
     url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned())
 }
 
+/// The name and value of each cookie an answer sets, as a request sends them back.
+pub fn cookies(r: &reqwest::Response) -> String {
+    let set = r.headers().get_all("set-cookie").iter();
+    set.filter_map(|v| v.to_str().ok()?.split(';').next().map(str::to_owned)).collect::<Vec<_>>().join("; ")
+}
+
+/// Walks the sign-in that `authorize` starts, and answers where pacod-id then sends the browser:
+/// the client's redirect URI, with the code.
+pub async fn walk(
+    http: &reqwest::Client,
+    issuer: &str,
+    authorize: &str,
+    email: &str,
+    password: &str,
+) -> anyhow::Result<String> {
+    let r = http.get(authorize).send().await.with_context(|| format!("pacod-id at {issuer} does not answer"))?;
+    let cookies = cookies(&r);
+    let to = r.headers().get("location").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+    let flow = query(&to, issuer, "flow")
+        .with_context(|| format!("pacod-id did not start a sign-in ({}, to {to:?})", r.status()))?;
+    let r = http
+        .post(format!("{issuer}/ui-api/v1/flows/{flow}/password"))
+        .header("cookie", cookies)
+        // The pages' API answers its own origin only.
+        .header("origin", issuer)
+        .json(&json!({ "email": email, "password": password }))
+        .send()
+        .await?;
+    let status = r.status();
+    let step: Value = r.json().await.unwrap_or(Value::Null);
+    if step["next"] != "redirect" {
+        bail!("signing in as {email} at pacod-id failed ({status}): {}", step["error"]["message"]);
+    }
+    Ok(step["to"].as_str().unwrap_or_default().to_owned())
+}
+
 impl Session {
     pub async fn sign_in(client: IdClient, email: &str, password: &str) -> anyhow::Result<Session> {
         let http = reqwest::Client::builder()
@@ -59,34 +95,11 @@ impl Session {
             .append_pair("nonce", &uuid::Uuid::new_v4().simple().to_string())
             .append_pair("code_challenge", &challenge)
             .append_pair("code_challenge_method", "S256");
-        let r = http.get(authorize).send().await.with_context(|| format!("pacod-id at {issuer} does not answer"))?;
-        let cookies: Vec<String> = r
-            .headers()
-            .get_all("set-cookie")
-            .iter()
-            .filter_map(|v| v.to_str().ok()?.split(';').next().map(str::to_owned))
-            .collect();
-        let to = r.headers().get("location").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
-        let flow = query(&to, &issuer, "flow")
-            .with_context(|| format!("pacod-id did not start a sign-in ({}, to {to:?})", r.status()))?;
-        let r = http
-            .post(format!("{issuer}/ui-api/v1/flows/{flow}/password"))
-            .header("cookie", cookies.join("; "))
-            // The pages' API answers its own origin only.
-            .header("origin", &issuer)
-            .json(&json!({ "email": email, "password": password }))
-            .send()
-            .await?;
-        let status = r.status();
-        let step: Value = r.json().await.unwrap_or(Value::Null);
-        if step["next"] != "redirect" {
-            bail!("signing in as {email} at pacod-id failed ({status}): {}", step["error"]["message"]);
-        }
-        let to = step["to"].as_str().unwrap_or_default();
-        if query(to, &issuer, "state").as_deref() != Some(state.as_str()) {
+        let to = walk(&http, &issuer, authorize.as_str(), email, password).await?;
+        if query(&to, &issuer, "state").as_deref() != Some(state.as_str()) {
             bail!("pacod-id answered the sign-in with another state");
         }
-        let code = query(to, &issuer, "code").context("pacod-id's redirect carries no code")?;
+        let code = query(&to, &issuer, "code").context("pacod-id's redirect carries no code")?;
         let mut session = Session { http, client, access: String::new(), refresh: None, until: Instant::now() };
         session
             .token_request(&[

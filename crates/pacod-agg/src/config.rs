@@ -312,7 +312,6 @@ mod tests {
                 "AGG_CONSOLE_",
                 "AGG_API_",
                 "AGG_SITE",
-                "AGG_ORIGIN",
                 "AGG_CADDY_",
                 "AGG_SCRAPER_",
             ]
