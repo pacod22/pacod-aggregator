@@ -9,6 +9,9 @@ use serde_json::{Map, Value, json};
 
 use crate::api::ErrorBody;
 use crate::api::admin::Session;
+use crate::api::resources::{PageView, SettingsInput, SettingsView};
+use crate::store::pages::PageInput;
+use crate::store::vendors::{Vendor, VendorInput};
 
 struct Doc {
     generator: SchemaGenerator,
@@ -77,11 +80,45 @@ pub fn document() -> Value {
         })),
         paths: Map::new(),
     };
-    let response = Some(doc.schema::<Session>());
+    let op = |tag, summary, status, body, response, query| Op { tag, summary, status, body, response, query };
+    let list = |item: Value| Some(json!({ "type": "array", "items": item }));
+
+    let session = doc.schema::<Session>();
+    doc.op("get", "/api/v1/session", op("admin", "Who is calling", 200, None, Some(session), &[]));
+
+    let (vendor, vendor_in) = (doc.schema::<Vendor>(), doc.schema::<VendorInput>());
+    doc.op("get", "/api/v1/vendors", op("vendors", "The vendors", 200, None, list(vendor.clone()), &[]));
+    doc.op(
+        "post",
+        "/api/v1/vendors",
+        op("vendors", "Add a vendor", 201, Some(vendor_in.clone()), Some(vendor.clone()), &[]),
+    );
+    doc.op("get", "/api/v1/vendors/{id}", op("vendors", "One vendor", 200, None, Some(vendor.clone()), &[]));
+    doc.op("put", "/api/v1/vendors/{id}", op("vendors", "Change a vendor", 200, Some(vendor_in), Some(vendor), &[]));
+    doc.op("delete", "/api/v1/vendors/{id}", op("vendors", "Remove a vendor and its pages", 204, None, None, &[]));
+
+    let (page, page_in) = (doc.schema::<PageView>(), doc.schema::<PageInput>());
+    let filters: &[(&str, &str, &str)] =
+        &[("vendor_id", "string", "Only this vendor's."), ("status", "string", "proposed, active or dismissed.")];
     doc.op(
         "get",
-        "/api/v1/session",
-        Op { tag: "admin", summary: "Who is calling", status: 200, body: None, response, query: &[] },
+        "/api/v1/pages",
+        op("pages", "Pages, with what the last check found", 200, None, list(page.clone()), filters),
+    );
+    doc.op("post", "/api/v1/pages", op("pages", "Add a page", 201, Some(page_in.clone()), Some(page.clone()), &[]));
+    doc.op("get", "/api/v1/pages/{id}", op("pages", "One page", 200, None, Some(page.clone()), &[]));
+    doc.op("put", "/api/v1/pages/{id}", op("pages", "Change a page", 200, Some(page_in), Some(page.clone()), &[]));
+    doc.op("delete", "/api/v1/pages/{id}", op("pages", "Remove a page", 204, None, None, &[]));
+    doc.op("post", "/api/v1/pages/{id}/confirm", op("pages", "Confirm a page", 200, None, Some(page.clone()), &[]));
+    doc.op("post", "/api/v1/pages/{id}/dismiss", op("pages", "Dismiss a page", 200, None, Some(page), &[]));
+    doc.op("post", "/api/v1/pages/{id}/check", op("pages", "Check a page at the next run", 202, None, None, &[]));
+
+    let (settings, settings_in) = (doc.schema::<SettingsView>(), doc.schema::<SettingsInput>());
+    doc.op("get", "/api/v1/settings", op("settings", "The settings", 200, None, Some(settings.clone()), &[]));
+    doc.op(
+        "put",
+        "/api/v1/settings",
+        op("settings", "Change the settings", 200, Some(settings_in), Some(settings), &[]),
     );
 
     let schemas = doc.generator.take_definitions(true);

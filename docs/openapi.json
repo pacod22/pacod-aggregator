@@ -36,6 +36,602 @@
           }
         }
       }
+    },
+    "/api/v1/vendors": {
+      "get": {
+        "tags": [
+          "vendors"
+        ],
+        "summary": "The vendors",
+        "operationId": "get_api_v1_vendors",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Vendor"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vendors"
+        ],
+        "summary": "Add a vendor",
+        "operationId": "post_api_v1_vendors",
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vendor"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vendors/{id}": {
+      "get": {
+        "tags": [
+          "vendors"
+        ],
+        "summary": "One vendor",
+        "operationId": "get_api_v1_vendors_id",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vendor"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "vendors"
+        ],
+        "summary": "Change a vendor",
+        "operationId": "put_api_v1_vendors_id",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vendor"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "vendors"
+        ],
+        "summary": "Remove a vendor and its pages",
+        "operationId": "delete_api_v1_vendors_id",
+        "responses": {
+          "204": {
+            "description": "Done"
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/pages": {
+      "get": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Pages, with what the last check found",
+        "operationId": "get_api_v1_pages",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PageView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vendor_id",
+            "in": "query",
+            "required": false,
+            "description": "Only this vendor's.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "proposed, active or dismissed.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Add a page",
+        "operationId": "post_api_v1_pages",
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pages/{id}": {
+      "get": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "One page",
+        "operationId": "get_api_v1_pages_id",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Change a page",
+        "operationId": "put_api_v1_pages_id",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Remove a page",
+        "operationId": "delete_api_v1_pages_id",
+        "responses": {
+          "204": {
+            "description": "Done"
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/pages/{id}/confirm": {
+      "post": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Confirm a page",
+        "operationId": "post_api_v1_pages_id_confirm",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/pages/{id}/dismiss": {
+      "post": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Dismiss a page",
+        "operationId": "post_api_v1_pages_id_dismiss",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/pages/{id}/check": {
+      "post": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "Check a page at the next run",
+        "operationId": "post_api_v1_pages_id_check",
+        "responses": {
+          "202": {
+            "description": "Done"
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The settings",
+        "operationId": "get_api_v1_settings",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Change the settings",
+        "operationId": "put_api_v1_settings",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsInput"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -95,6 +691,523 @@
           "type",
           "message"
         ]
+      },
+      "Vendor": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "sites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Where the weekly scan starts for a vendor with no page there yet."
+          },
+          "currency": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "A vendor switched off is not read, and not published."
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "An administrator's word that its pages list all of its models."
+          },
+          "read_complete": {
+            "type": "boolean",
+            "description": "Whether every active page was read without failure at the last check. The catalogue says\na vendor is complete only then."
+          },
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "sites",
+          "currency",
+          "enabled",
+          "complete",
+          "read_complete",
+          "created_at",
+          "updated_at"
+        ],
+        "description": "A company whose API serves models."
+      },
+      "VendorInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "sites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "currency": {
+            "type": "string",
+            "default": "USD"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "complete": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "id",
+          "display_name"
+        ],
+        "description": "A vendor as an administrator adds or changes it."
+      },
+      "PageView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "vendor_id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "description": "Normalised: no fragment, no tracking parameters, no slash at the end."
+          },
+          "kind": {
+            "type": "string",
+            "description": "`page` (rendered in a browser and read by a model) or `feed` (a list, read without either)."
+          },
+          "format": {
+            "type": "string",
+            "description": "For feeds: `pacod`, `litellm` or `openrouter`."
+          },
+          "status": {
+            "type": "string",
+            "description": "`proposed`, `active` or `dismissed`."
+          },
+          "found_by": {
+            "type": "string",
+            "description": "`admin`, `scan` or `seed`."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Where two pages of a vendor say different things about a model, the lower number wins."
+          },
+          "notes": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "The page's title, as the scan saw it."
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "How strongly the scan judged the page to list models and prices."
+          },
+          "moved_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The page this one replaces, where the scan found that a page moved here."
+          },
+          "decided_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vendor": {
+            "type": "string",
+            "description": "The vendor's name."
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the last check found. Absent before the page was first checked."
+          }
+        },
+        "required": [
+          "id",
+          "vendor_id",
+          "url",
+          "kind",
+          "format",
+          "status",
+          "found_by",
+          "priority",
+          "notes",
+          "title",
+          "created_at",
+          "updated_at",
+          "vendor"
+        ],
+        "description": "A page with its vendor's name and what the last check found."
+      },
+      "PageState": {
+        "type": "object",
+        "properties": {
+          "last_checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_ok_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the page last answered and read as it should."
+          },
+          "last_changed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the page last read differently from the time before."
+          },
+          "last_read_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the extraction model last read it."
+          },
+          "http_status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "final_url": {
+            "type": "string",
+            "description": "Where the page ended up after redirects, when that is elsewhere."
+          },
+          "outcome": {
+            "type": "string",
+            "description": "`read`, `unchanged`, `not_read` or `failed`; empty before the first check."
+          },
+          "message": {
+            "type": "string"
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "flag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`gone` or `moved`, when the scan found so."
+          },
+          "moved_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "check_requested": {
+            "type": "boolean",
+            "description": "A check was asked for and has not happened yet."
+          }
+        },
+        "required": [
+          "final_url",
+          "outcome",
+          "message",
+          "consecutive_failures",
+          "check_requested"
+        ],
+        "description": "What the last check found out about a page."
+      },
+      "PageInput": {
+        "type": "object",
+        "properties": {
+          "vendor_id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "default": "page"
+          },
+          "format": {
+            "type": "string",
+            "default": ""
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "default": 0
+          },
+          "notes": {
+            "type": "string",
+            "default": ""
+          }
+        },
+        "required": [
+          "vendor_id",
+          "url"
+        ],
+        "description": "A page as an administrator adds or changes it. Its status changes through confirm and dismiss;\nwhat the scan saw about it stays as the scan saw it."
+      },
+      "SettingsView": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the check and the scan run on their schedules.",
+            "default": true
+          },
+          "schedule": {
+            "type": "string",
+            "description": "When the confirmed pages are checked. A cron expression with five fields, as standard cron\nreads it: days of the week from 0 (Sunday) to 7 (Sunday again) or by name. It may restrict\nthe day of the month or the day of the week, not both.",
+            "default": "17 2 * * *"
+          },
+          "scan_schedule": {
+            "type": "string",
+            "description": "When the vendors' sites are scanned for pages, in the same form. Weekly by default.",
+            "default": "41 4 * * 1"
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "The IANA time zone the schedules are read in.",
+            "default": "UTC"
+          },
+          "extraction_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model that reads the pages, by the name its endpoint takes: a chat model with\nstructured output. Pages are not read until one is set."
+          },
+          "extraction_context_window": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "description": "How much the extraction model takes in at once, for the size of the parts of a long page.",
+            "default": 200000
+          },
+          "max_extractions_per_run": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "description": "How many calls of the extraction model one run may make. A long page takes several.",
+            "default": 60
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ScanSettings",
+            "default": {
+              "max_pages_per_vendor": 12,
+              "min_score": 10.0,
+              "keywords": [
+                "pricing",
+                "price",
+                "models",
+                "rates",
+                "billing"
+              ]
+            }
+          },
+          "openrouter_price_vendors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The vendors whose prices are taken from OpenRouter's list. For others, open-weight models\nin particular, its price is usually a third party's. Its properties apply for every vendor.",
+            "default": [
+              "openai",
+              "anthropic",
+              "google",
+              "xai"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "description": "The settings, and the version to send back with a change."
+      },
+      "ScanSettings": {
+        "type": "object",
+        "properties": {
+          "max_pages_per_vendor": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "description": "How many candidate pages per vendor the scan opens in the browser and scores.",
+            "default": 12
+          },
+          "min_score": {
+            "type": "number",
+            "format": "double",
+            "description": "The score a page needs to be proposed. A price per million tokens counts 2, a model the\ncatalogue knows 3, a keyword in the address or title 4.",
+            "default": 10.0
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Words in an address or title that make a page worth opening.",
+            "default": [
+              "pricing",
+              "price",
+              "models",
+              "rates",
+              "billing"
+            ]
+          }
+        },
+        "description": "How the weekly scan looks for pages."
+      },
+      "SettingsInput": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the check and the scan run on their schedules.",
+            "default": true
+          },
+          "schedule": {
+            "type": "string",
+            "description": "When the confirmed pages are checked. A cron expression with five fields, as standard cron\nreads it: days of the week from 0 (Sunday) to 7 (Sunday again) or by name. It may restrict\nthe day of the month or the day of the week, not both.",
+            "default": "17 2 * * *"
+          },
+          "scan_schedule": {
+            "type": "string",
+            "description": "When the vendors' sites are scanned for pages, in the same form. Weekly by default.",
+            "default": "41 4 * * 1"
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "The IANA time zone the schedules are read in.",
+            "default": "UTC"
+          },
+          "extraction_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model that reads the pages, by the name its endpoint takes: a chat model with\nstructured output. Pages are not read until one is set."
+          },
+          "extraction_context_window": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "description": "How much the extraction model takes in at once, for the size of the parts of a long page.",
+            "default": 200000
+          },
+          "max_extractions_per_run": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "description": "How many calls of the extraction model one run may make. A long page takes several.",
+            "default": 60
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ScanSettings",
+            "default": {
+              "max_pages_per_vendor": 12,
+              "min_score": 10.0,
+              "keywords": [
+                "pricing",
+                "price",
+                "models",
+                "rates",
+                "billing"
+              ]
+            }
+          },
+          "openrouter_price_vendors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The vendors whose prices are taken from OpenRouter's list. For others, open-weight models\nin particular, its price is usually a third party's. Its properties apply for every vendor.",
+            "default": [
+              "openai",
+              "anthropic",
+              "google",
+              "xai"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The version the change was made from: the change is refused when another came first."
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "description": "A change of the settings."
       }
     }
   }

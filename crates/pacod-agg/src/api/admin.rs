@@ -24,5 +24,5 @@ async fn session(p: Principal) -> Json<Session> {
 }
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/session", get(session))
+    Router::new().route("/session", get(session)).merge(super::resources::routes())
 }

@@ -1,4 +1,9 @@
-//! The aggregator's database (PostgreSQL, database `pacod_agg`).
+//! The aggregator's database (PostgreSQL, database `pacod_agg`). The only SQL.
+
+pub mod jobs;
+pub mod pages;
+pub mod settings;
+pub mod vendors;
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
 

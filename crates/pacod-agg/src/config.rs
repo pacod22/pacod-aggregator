@@ -31,6 +31,7 @@ pub const VARIABLES: &[&str] = &[
     "AGG_INTERNAL_TOKEN",
     "AGG_LLM_URL",
     "AGG_LLM_KEY",
+    "AGG_EGRESS_ALLOW_PRIVATE",
     "AGG_LOG_FORMAT",
 ];
 
@@ -137,6 +138,8 @@ pub struct Config {
     /// What the scraper presents on the internal API. Unset: the internal API answers no one.
     pub internal_token: Option<String>,
     pub llm: Option<LlmLink>,
+    /// Hosts and ranges that are not public and that pages may still be read from.
+    pub egress_allow_private: Vec<String>,
 }
 
 fn id_settings(env: Env) -> anyhow::Result<IdSettings> {
@@ -198,6 +201,9 @@ impl Config {
             catalog_public: flag(env, "AGG_CATALOG_PUBLIC", false)?,
             internal_token,
             llm,
+            egress_allow_private: set(env, "AGG_EGRESS_ALLOW_PRIVATE")
+                .map(|v| v.split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect())
+                .unwrap_or_default(),
         })
     }
 }

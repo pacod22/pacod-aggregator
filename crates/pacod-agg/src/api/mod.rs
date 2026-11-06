@@ -4,6 +4,7 @@
 pub mod admin;
 pub mod auth;
 pub mod public;
+pub mod resources;
 
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ use serde_json::{Value, json};
 pub use auth::AuthMode;
 
 use crate::config::Config;
+use crate::settings::Settings;
 use crate::store::Store;
 
 #[derive(Clone)]
@@ -26,6 +28,19 @@ pub struct AppState {
     pub store: Store,
     pub auth: Arc<AuthMode>,
     pub http: reqwest::Client,
+    pub egress: Arc<pacod_agg_jobs::egress::EgressPolicy>,
+}
+
+impl AppState {
+    /// The settings as they are stored, and their version.
+    pub async fn settings(&self) -> ApiResult<(Settings, i32)> {
+        let (doc, version) = self.store.settings().await?;
+        let settings = serde_json::from_value(doc).map_err(|e| {
+            tracing::error!(error = %e, "the stored settings cannot be read");
+            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", "the stored settings cannot be read")
+        })?;
+        Ok((settings, version))
+    }
 }
 
 /// An answer that is not a success: `{"error": {"type", "message", "details"}}`, as pacod-gw

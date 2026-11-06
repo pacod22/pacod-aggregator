@@ -17,6 +17,9 @@ pub mod config;
 pub mod identity;
 pub mod metrics;
 pub mod openapi;
+pub mod schedule;
+pub mod seeds;
+pub mod settings;
 pub mod store;
 
 use api::{AppState, AuthMode};
@@ -52,6 +55,9 @@ pub struct App {
 pub async fn app(config: Arc<Config>, stop: watch::Receiver<bool>) -> anyhow::Result<App> {
     let store = connect(&config.database_url).await?;
     store.migrate().await.context("migrating the database")?;
+    seeds::ensure(&store).await.context("adding the vendors a new installation starts from")?;
+    let egress = pacod_agg_jobs::egress::EgressPolicy::parse(&config.egress_allow_private)
+        .map_err(|why| anyhow::anyhow!("AGG_EGRESS_ALLOW_PRIVATE: {why}"))?;
     let http = reqwest::Client::builder().connect_timeout(Duration::from_secs(5)).build()?;
     let auth = match &config.auth {
         Auth::Oidc(s) => AuthMode::Oidc(identity::Identity::start(s.clone(), stop)),
@@ -60,7 +66,7 @@ pub async fn app(config: Arc<Config>, stop: watch::Receiver<bool>) -> anyhow::Re
             AuthMode::Dev { token: token.clone() }
         }
     };
-    let state = AppState { config, store, auth: Arc::new(auth), http };
+    let state = AppState { config, store, auth: Arc::new(auth), http, egress: Arc::new(egress) };
     Ok(App { public: api::public_router(state.clone()), admin: api::admin_router(state.clone()), state })
 }
 

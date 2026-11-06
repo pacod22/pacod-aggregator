@@ -1,0 +1,317 @@
+//! Where pages may be read from (server-side request forgery).
+//!
+//! Administrators name pages, and the scan finds more. Without a check, an address pointing at
+//! a cloud metadata endpoint or an internal service would make the scraper fetch it with its
+//! own network position. Public addresses are always allowed. Private, loopback and link-local
+//! addresses are refused unless the installation explicitly allows the host or its range.
+//!
+//! The check runs twice: when the page is saved, and when a connection is opened (on the
+//! resolved address), so a name that later resolves to an internal address is caught. The
+//! server applies it when a page is saved, the scraper's egress proxy to every connection a
+//! page makes; both read the same allow-list, `AGG_EGRESS_ALLOW_PRIVATE`.
+//!
+//! Copied from pacod-gw (commit 50fe4b7, `crates/pacod-gw-events/src/egress.rs`).
+
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+/// The installation's allow-list for non-public destinations.
+#[derive(Debug, Clone, Default)]
+pub struct EgressPolicy {
+    hosts: Vec<String>,
+    nets: NetList,
+}
+
+/// Addresses and CIDR ranges, for example `10.0.0.0/8` or `192.168.1.7`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NetList(Vec<(IpAddr, u8)>);
+
+impl NetList {
+    /// Parses one entry. `None` when it is not an address or a range (a host name, say);
+    /// an error when it looks like a range but is not a valid one.
+    pub fn parse_entry(e: &str) -> Option<Result<(IpAddr, u8), String>> {
+        let e = e.trim();
+        if let Some((addr, len)) = e.split_once('/') {
+            let parsed = (|| {
+                let ip: IpAddr = addr.parse().map_err(|_| format!("\"{e}\" is not a CIDR range"))?;
+                let len: u8 = len.parse().map_err(|_| format!("\"{e}\" is not a CIDR range"))?;
+                let max = if ip.is_ipv4() { 32 } else { 128 };
+                if len > max {
+                    return Err(format!("\"{e}\": prefix length exceeds {max}"));
+                }
+                Ok((ip, len))
+            })();
+            return Some(parsed);
+        }
+        e.parse::<IpAddr>().ok().map(|ip| Ok((ip, if ip.is_ipv4() { 32 } else { 128 })))
+    }
+
+    /// Parses entries that must all be addresses or ranges.
+    pub fn parse(entries: &[String]) -> Result<Self, String> {
+        let mut list = Self::default();
+        for e in entries.iter().map(|e| e.trim()).filter(|e| !e.is_empty()) {
+            match Self::parse_entry(e) {
+                Some(net) => list.0.push(net?),
+                None => return Err(format!("\"{e}\" is not an address or a CIDR range")),
+            }
+        }
+        Ok(list)
+    }
+
+    pub fn push(&mut self, net: (IpAddr, u8)) {
+        self.0.push(net);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Whether `ip` lies in one of the ranges. An IPv4-mapped IPv6 address matches IPv4 ranges.
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        self.0.iter().any(|(net, len)| in_net(ip, *net, *len))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EgressError {
+    #[error("the URL is not valid: {0}")]
+    BadUrl(String),
+    #[error("only http and https URLs are allowed")]
+    Scheme,
+    #[error("the URL has no host")]
+    NoHost,
+    #[error(
+        "{0} is a private, loopback or link-local address; add the host or its range to AGG_EGRESS_ALLOW_PRIVATE if this is intended"
+    )]
+    NotPublic(String),
+}
+
+impl EgressPolicy {
+    /// Parses allow-list entries: host names, single addresses, or CIDR ranges.
+    pub fn parse(entries: &[String]) -> Result<Self, String> {
+        let mut p = Self::default();
+        for e in entries {
+            let e = e.trim();
+            if e.is_empty() {
+                continue;
+            }
+            match NetList::parse_entry(e) {
+                Some(net) => p.nets.push(net?),
+                None => p.hosts.push(e.to_ascii_lowercase()),
+            }
+        }
+        Ok(p)
+    }
+
+    fn host_allowed(&self, host: &str) -> bool {
+        let h = host.to_ascii_lowercase();
+        self.hosts.contains(&h)
+    }
+
+    fn net_allowed(&self, ip: IpAddr) -> bool {
+        self.nets.contains(ip)
+    }
+
+    /// Whether a connection to `ip`, reached through the name `host`, is allowed.
+    pub fn allows(&self, host: &str, ip: IpAddr) -> bool {
+        is_public(ip) || self.host_allowed(host) || self.net_allowed(ip)
+    }
+
+    /// Checks a URL when it is saved, and an address literal before it is connected to.
+    pub fn check_url(&self, raw: &str) -> Result<url::Url, EgressError> {
+        let u = url::Url::parse(raw).map_err(|e| EgressError::BadUrl(e.to_string()))?;
+        if !matches!(u.scheme(), "http" | "https") {
+            return Err(EgressError::Scheme);
+        }
+        match u.host() {
+            None => return Err(EgressError::NoHost),
+            Some(url::Host::Ipv4(ip)) => self.check_literal(IpAddr::V4(ip))?,
+            Some(url::Host::Ipv6(ip)) => self.check_literal(IpAddr::V6(ip))?,
+            Some(url::Host::Domain(d)) => {
+                if d.eq_ignore_ascii_case("localhost")
+                    && !self.host_allowed(d)
+                    && !self.net_allowed(Ipv4Addr::LOCALHOST.into())
+                {
+                    return Err(EgressError::NotPublic(d.to_owned()));
+                }
+            }
+        }
+        Ok(u)
+    }
+
+    fn check_literal(&self, ip: IpAddr) -> Result<(), EgressError> {
+        if is_public(ip) || self.net_allowed(ip) || self.host_allowed(&ip.to_string()) {
+            Ok(())
+        } else {
+            Err(EgressError::NotPublic(ip.to_string()))
+        }
+    }
+}
+
+fn in_net(ip: IpAddr, net: IpAddr, len: u8) -> bool {
+    match (ip, net) {
+        (IpAddr::V4(a), IpAddr::V4(n)) => {
+            let mask = if len == 0 { 0 } else { u32::MAX << (32 - u32::from(len)) };
+            u32::from(a) & mask == u32::from(n) & mask
+        }
+        (IpAddr::V6(a), IpAddr::V6(n)) => {
+            let mask = if len == 0 { 0 } else { u128::MAX << (128 - u32::from(len)) };
+            u128::from(a) & mask == u128::from(n) & mask
+        }
+        // An IPv4-mapped IPv6 address is matched against IPv4 ranges.
+        (IpAddr::V6(a), IpAddr::V4(_)) => a.to_ipv4_mapped().is_some_and(|v4| in_net(IpAddr::V4(v4), net, len)),
+        _ => false,
+    }
+}
+
+/// True for addresses on the public internet.
+pub fn is_public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_public_v4(v4),
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => is_public_v4(v4),
+            None => is_public_v6(v6),
+        },
+    }
+}
+
+fn is_public_v4(ip: Ipv4Addr) -> bool {
+    let o = ip.octets();
+    !(ip.is_private()
+        || ip.is_loopback()
+        || ip.is_link_local()          // 169.254.0.0/16, includes cloud metadata endpoints
+        || ip.is_unspecified()
+        || ip.is_broadcast()
+        || ip.is_multicast()
+        || ip.is_documentation()
+        || o[0] == 0
+        || (o[0] == 100 && (o[1] & 0xc0) == 64)   // 100.64.0.0/10 carrier-grade NAT
+        || (o[0] == 192 && o[1] == 0 && o[2] == 0) // 192.0.0.0/24 protocol assignments
+        || (o[0] == 198 && (o[1] & 0xfe) == 18)   // 198.18.0.0/15 benchmarking
+        || o[0] >= 240) // reserved
+}
+
+fn is_public_v6(ip: Ipv6Addr) -> bool {
+    let s = ip.segments();
+    if ip.is_loopback() || ip.is_unspecified() {
+        return false;
+    }
+    // Addresses that carry an IPv4 address lead to it: they are judged by it.
+    let embedded = |hi: u16, lo: u16| {
+        let [a, b] = hi.to_be_bytes();
+        let [c, d] = lo.to_be_bytes();
+        Ipv4Addr::new(a, b, c, d)
+    };
+    if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] // 64:ff9b::/96 NAT64
+        || s[..6] == [0, 0, 0, 0, 0, 0]
+    // ::/96 IPv4-compatible
+    {
+        return is_public_v4(embedded(s[6], s[7]));
+    }
+    if s[0] == 0x2002 {
+        return is_public_v4(embedded(s[1], s[2])); // 2002::/16 6to4
+    }
+    !(ip.is_multicast()
+        || (s[0] & 0xfe00) == 0xfc00   // fc00::/7 unique local
+        || (s[0] & 0xffc0) == 0xfe80   // fe80::/10 link-local
+        || (s[0] & 0xffc0) == 0xfec0   // fec0::/10 site-local, deprecated but still routed by some
+        || s[..3] == [0x64, 0xff9b, 1] // 64:ff9b:1::/48 local NAT64
+        || (s[0] == 0x2001 && s[1] == 0) // 2001::/32 Teredo, whose IPv4 address is hidden
+        || s[..4] == [0x100, 0, 0, 0]  // 100::/64 discard
+        || (s[0] == 0x2001 && s[1] == 0x0db8)) // documentation
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn policy(entries: &[&str]) -> EgressPolicy {
+        EgressPolicy::parse(&entries.iter().map(|s| s.to_string()).collect::<Vec<_>>()).unwrap()
+    }
+
+    #[test]
+    fn public_urls_are_allowed() {
+        let p = policy(&[]);
+        for ok in ["https://api.openai.com/v1", "https://api.anthropic.com", "http://8.8.8.8:8080/x"] {
+            assert!(p.check_url(ok).is_ok(), "{ok}");
+        }
+    }
+
+    #[test]
+    fn internal_targets_are_refused_by_default() {
+        let p = policy(&[]);
+        for bad in [
+            "http://169.254.169.254/latest/meta-data/", // cloud metadata
+            "http://127.0.0.1:11434/v1",
+            "http://localhost:11434/v1",
+            "http://10.0.0.5/v1",
+            "http://192.168.1.10/v1",
+            "http://172.16.0.1/",
+            "http://[::1]/",
+            "http://[fd00::1]/",
+            "http://[::ffff:10.0.0.1]/", // IPv4-mapped private address
+            "http://0.0.0.0/",
+            "http://100.64.0.1/",
+        ] {
+            assert!(matches!(p.check_url(bad), Err(EgressError::NotPublic(_))), "{bad}");
+        }
+        assert_eq!(p.check_url("ftp://example.com"), Err(EgressError::Scheme));
+        assert!(matches!(p.check_url("not a url"), Err(EgressError::BadUrl(_))));
+    }
+
+    #[test]
+    fn allow_list_opens_specific_hosts_and_ranges() {
+        let p = policy(&["ollama", "10.1.0.0/16", "127.0.0.1", "localhost"]);
+        assert!(p.check_url("http://10.1.2.3:11434/v1").is_ok());
+        assert!(p.check_url("http://127.0.0.1:9000").is_ok());
+        assert!(p.check_url("http://localhost:9000").is_ok());
+        assert!(matches!(p.check_url("http://10.2.0.1/"), Err(EgressError::NotPublic(_))));
+        assert!(matches!(p.check_url("http://127.0.0.2/"), Err(EgressError::NotPublic(_))));
+        // A named host is checked again when it is resolved.
+        assert!(p.allows("ollama", "172.18.0.5".parse().unwrap()));
+        assert!(!p.allows("other", "172.18.0.5".parse().unwrap()));
+        assert!(p.allows("other", "10.1.9.9".parse().unwrap()));
+        assert!(p.allows("api.openai.com", "104.18.6.192".parse().unwrap()));
+    }
+
+    #[test]
+    fn ipv6_forms_of_internal_addresses_are_not_public() {
+        for internal in [
+            "64:ff9b::a9fe:a9fe",  // NAT64 of 169.254.169.254
+            "64:ff9b::7f00:1",     // NAT64 of 127.0.0.1
+            "2002:a00:1::1",       // 6to4 of 10.0.0.1
+            "::a00:1",             // IPv4-compatible 10.0.0.1
+            "fec0::1",             // site-local
+            "64:ff9b:1::a",        // local NAT64
+            "2001:0:4136:e378::1", // Teredo
+            "100::1",              // discard
+        ] {
+            assert!(!is_public(internal.parse().unwrap()), "{internal}");
+        }
+        for public in ["64:ff9b::808:808", "2002:808:808::1", "2606:4700::1111"] {
+            assert!(is_public(public.parse().unwrap()), "{public}");
+        }
+    }
+
+    #[test]
+    fn a_public_name_resolving_to_an_internal_address_is_refused_at_connect_time() {
+        let p = policy(&[]);
+        assert!(p.check_url("https://rebind.example.com/v1").is_ok(), "the URL itself looks public");
+        assert!(!p.allows("rebind.example.com", "169.254.169.254".parse().unwrap()));
+        assert!(!p.allows("rebind.example.com", "127.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn malformed_allow_list_entries_are_rejected() {
+        assert!(EgressPolicy::parse(&["10.0.0.0/33".to_string()]).is_err());
+        assert!(EgressPolicy::parse(&["x/8".to_string()]).is_err());
+        assert!(EgressPolicy::parse(&[" ".to_string(), "".to_string()]).is_ok());
+    }
+
+    #[test]
+    fn cidr_matching() {
+        assert!(in_net("10.1.255.255".parse().unwrap(), "10.1.0.0".parse().unwrap(), 16));
+        assert!(!in_net("10.2.0.0".parse().unwrap(), "10.1.0.0".parse().unwrap(), 16));
+        assert!(in_net("1.2.3.4".parse().unwrap(), "0.0.0.0".parse().unwrap(), 0));
+        assert!(in_net("fd00::5".parse().unwrap(), "fd00::".parse().unwrap(), 8));
+    }
+}
