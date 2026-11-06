@@ -1,0 +1,101 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "pacod-aggregator",
+    "version": "0.1.0",
+    "description": "Model data for AI gateways: the public catalogue and the console's API."
+  },
+  "paths": {
+    "/api/v1/session": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Who is calling",
+        "operationId": "get_api_v1_session",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "display": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`user` or `service`."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "display",
+          "kind",
+          "permissions"
+        ],
+        "description": "Who is calling, and what they may do."
+      },
+      "ErrorBody": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "description": "The error body of the OpenAPI document."
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": true
+        },
+        "required": [
+          "type",
+          "message"
+        ]
+      }
+    }
+  }
+}

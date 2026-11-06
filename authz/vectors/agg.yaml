@@ -1,0 +1,45 @@
+# What each aggregator role may do, as the server's checks (crates/pacod-agg/src/api/auth.rs) and
+# the console ask it. The server's tests run this file through pacod-id's rules engine; format:
+# vendor/pacod-id/policy/engine-vectors/README.md.
+manifests: [agg]
+cases:
+  - name: a consumer reads the catalogue and nothing else
+    subject: { kind: service, bindings: [{ role: agg.consumer, path: [platform] }] }
+    checks:
+      - { allowed: agg.catalog.read, at: [platform], expect: true }
+      - { allowed: agg.data.read, at: [platform], expect: false }
+      - { allowed: agg.data.manage, at: [platform], expect: false }
+      - { allowed: agg.members.manage, at: [platform], expect: false }
+      - { holds_any_at: platform, expect: true }
+
+  - name: a viewer reads everything and changes nothing
+    subject: { kind: user, bindings: [{ role: agg.viewer, path: [platform] }] }
+    checks:
+      - { allowed: agg.catalog.read, at: [platform], expect: true }
+      - { allowed: agg.data.read, at: [platform], expect: true }
+      - { allowed: agg.data.manage, at: [platform], expect: false }
+      - { allowed: agg.members.manage, at: [platform], expect: false }
+      - { can_grant: agg.viewer, at: [platform], expect: not_permitted }
+
+  - name: an admin does everything, and gives every role
+    subject: { kind: user, bindings: [{ role: agg.admin, path: [platform] }] }
+    checks:
+      - { allowed: agg.catalog.read, at: [platform], expect: true }
+      - { allowed: agg.data.read, at: [platform], expect: true }
+      - { allowed: agg.data.manage, at: [platform], expect: true }
+      - { allowed: agg.members.manage, at: [platform], expect: true }
+      - { has_role: agg.admin, scope: platform, expect: true }
+      - { can_grant: agg.admin, at: [platform], expect: ok }
+      - { can_grant: agg.consumer, at: [platform], expect: ok }
+
+  - name: nobody holds a role without a binding
+    subject: { kind: user, bindings: [] }
+    checks:
+      - { allowed: agg.catalog.read, at: [platform], expect: false }
+      - { holds_any_at: platform, expect: false }
+
+  - name: another product's roles grant nothing here
+    subject: { kind: user, bindings: [{ role: gw.platform_admin, path: [platform] }] }
+    checks:
+      - { allowed: agg.catalog.read, at: [platform], expect: false }
+      - { allowed: agg.data.read, at: [platform], expect: false }

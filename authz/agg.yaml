@@ -1,0 +1,31 @@
+# pacod-aggregator's roles and permissions, for pacod-id's rules engine.
+#
+# The server compiles this file in (crates/pacod-agg/src/identity.rs), pushes it to pacod-id at
+# every start, and checks every call against it; the console generates
+# ui/src/lib/authz.generated.ts from it (make authz). authz/vectors/agg.yaml pins what each role
+# may do.
+#
+# Permissions:
+#   catalog.read     read the catalogue through the public API
+#   data.read        see vendors, pages, runs and settings in the console
+#   data.manage      add, confirm and remove vendors and pages, change settings, start runs
+#   members.manage   give and take aggregator roles
+#
+# No role is implicit: in a realm where anyone can sign up, an implicit role would give every
+# account read access. AGG_CATALOG_PUBLIC is the way to open the catalogue to everyone.
+product: agg
+roles:
+  consumer:
+    at: [platform]
+    permissions: [catalog.read]
+  viewer:
+    at: [platform]
+    permissions: [catalog.read, data.read]
+  admin:
+    at: [platform]
+    permissions: [catalog.read, data.read, data.manage, members.manage]
+    # Nobody removes the last aggregator admin.
+    protected: true
+grant:
+  # Admins give and take every aggregator role.
+  default: members.manage
