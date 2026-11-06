@@ -11,7 +11,7 @@ groups:
         annotations:
           summary: "pacod-aggregator does not answer"
           description: "Prometheus has not reached {{ $labels.instance }} for two minutes. Gateways keep the model data they last read."
-          runbook: "docs/runbook.md#alerts"
+          runbook: "docs/runbook.md#7-alerts"
 
       - alert: AggregatorScraperAbsent
         # The jobs are on, and no scraper has asked the server for work for 15 minutes: no page is
@@ -24,7 +24,7 @@ groups:
         annotations:
           summary: "No aggregator scraper is running"
           description: "The jobs are switched on, but no scraper has asked for work for {{ $value | humanizeDuration }}. Prices are neither checked nor confirmed."
-          runbook: "docs/runbook.md#alerts"
+          runbook: "docs/runbook.md#7-alerts"
 
       - alert: AggregatorPageFailing
         # A confirmed page has failed three checks in a row (it is checked daily).
@@ -36,4 +36,4 @@ groups:
         annotations:
           summary: "The page {{ $labels.url }} of {{ $labels.vendor }} keeps failing"
           description: "The last {{ $value | humanize }} checks of {{ $labels.url }} failed. Its prices and properties are not updated, and the vendor is not published as complete."
-          runbook: "docs/runbook.md#alerts"
+          runbook: "docs/runbook.md#7-alerts"

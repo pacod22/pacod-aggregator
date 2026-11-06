@@ -1,11 +1,16 @@
-# The edge of pacod-aggregator's own stack: the global options, then every product's site blocks
-# (platform/caddy/*.caddy, here agg.caddy alone). pacod-demo's Caddyfile does the same for the full
-# stack.
+# The edge of pacod-aggregator's own stack: the global options, pacod-id's pages, then every
+# product's site blocks (platform/caddy/*.caddy, here agg.caddy alone). pacod-demo's Caddyfile does
+# the same for the full stack.
+#
+# A server sets AGG_SITE, AGG_API_SITE and AGG_ID_SITE to its https:// addresses, and Caddy obtains
+# the certificates. An http:// address stays plain, which is what development uses.
 {
 	admin off
-	# Development: plain HTTP on ports of its own. A server sets AGG_SITE and AGG_API_SITE to its
-	# https:// addresses, and Caddy obtains the certificates.
-	auto_https disable_redirects
+}
+
+# The issuer's address: sign-in, the account pages, and the keys.
+{$AGG_ID_SITE:http://id.localhost} {
+	reverse_proxy pacod-id:8070
 }
 
 import /etc/caddy/sites/*.caddy

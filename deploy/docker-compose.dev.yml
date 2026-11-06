@@ -120,8 +120,14 @@ services:
       PID_BOOTSTRAP_ADMIN_PASSWORD: pacod-aggregator-dev
     volumes: !override
       - ./pacod-id/pacod-id.dev.toml:/etc/pacod-id/pacod-id.toml:ro
+    ports:
+      - "127.0.0.1:18372:8070"
 
   pacod-caddy:
     environment:
       AGG_SITE: http://localhost:13150
       AGG_API_SITE: http://localhost:13151
+      AGG_ID_SITE: http://id.localhost:13152
+    ports: !override
+      - "127.0.0.1:13150:13150"
+      - "127.0.0.1:13151:13151"

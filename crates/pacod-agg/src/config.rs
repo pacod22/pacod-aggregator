@@ -312,6 +312,9 @@ mod tests {
                 "AGG_CONSOLE_",
                 "AGG_API_",
                 "AGG_SITE",
+                "AGG_ID_SITE",
+                "AGG_HTTP_PORT",
+                "AGG_HTTPS_PORT",
                 "AGG_CADDY_",
                 "AGG_SCRAPER_",
             ]

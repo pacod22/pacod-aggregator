@@ -5,7 +5,8 @@
 #
 #   pacod-postgres, pacod-db-init   the aggregator's role and database (platform/postgres)
 #   pacod-id, pacod-mailpit         sign-in; realm "aggregator" (deploy/pacod-id/pacod-id.toml)
-#   pacod-caddy                     the console and the catalogue (platform/caddy/agg.caddy)
+#   pacod-caddy                     the console and the catalogue (platform/caddy/agg.caddy), and
+#                                   pacod-id's sign-in pages (deploy/caddy/Caddyfile)
 #   pacod-prometheus, pacod-grafana its metrics, alerts and dashboard
 
 x-logging: &logging
@@ -80,8 +81,8 @@ services:
       AGG_UI_CLIENT_SECRET: ${AGG_UI_CLIENT_SECRET:-}
       # The issuer is the address browsers use; pacod-id answers its sign-in pages only on that
       # exact host and port.
-      AGG_ID_ISSUER: ${AGG_ID_ISSUER:-http://127.0.0.1:18372}
-      AGG_CONSOLE_URL: ${AGG_CONSOLE_URL:-http://localhost:13150}
+      AGG_ID_ISSUER: ${AGG_ID_ISSUER:-}
+      AGG_CONSOLE_URL: ${AGG_CONSOLE_URL:-}
       PID_TRUSTED_PROXIES: ${PID_TRUSTED_PROXIES:-}
       # The first account, created once: an identity admin and aggregator admin.
       PID_BOOTSTRAP_ADMIN_EMAIL: ${ID_ADMIN_EMAIL:-admin@pacod-aggregator.test}
@@ -101,8 +102,7 @@ services:
       - ./pacod-id/pacod-id.toml:/etc/pacod-id/pacod-id.toml:ro
     read_only: true
     tmpfs: ["/tmp:size=16m"]
-    ports:
-      - "127.0.0.1:${AGG_ID_PORT:-18372}:8070"
+    # Browsers reach it through the edge, at AGG_ID_SITE: the issuer is that address.
     networks:
       pacod-net:
       pacod-admin-net:
@@ -131,16 +131,19 @@ services:
     logging: *logging
     restart: unless-stopped
     environment:
-      AGG_SITE: ${AGG_SITE:-http://localhost:13150}
-      AGG_API_SITE: ${AGG_API_SITE:-http://localhost:13151}
+      AGG_SITE: ${AGG_SITE:-}
+      AGG_API_SITE: ${AGG_API_SITE:-}
+      AGG_ID_SITE: ${AGG_ID_SITE:-}
       AGG_CADDY_LOG_FORMAT: ${AGG_CADDY_LOG_FORMAT:-console}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ../platform/caddy:/etc/caddy/sites:ro
       - pacod-caddy-data:/data
+    # Caddy obtains the certificates of https:// addresses, which needs these two ports.
     ports:
-      - "127.0.0.1:${AGG_UI_PORT:-13150}:13150"
-      - "127.0.0.1:${AGG_API_PORT:-13151}:13151"
+      - "${AGG_HTTP_PORT:-80}:80"
+      - "${AGG_HTTPS_PORT:-443}:443"
+      - "${AGG_HTTPS_PORT:-443}:443/udp"
     networks: [pacod-net]
 
   pacod-prometheus:

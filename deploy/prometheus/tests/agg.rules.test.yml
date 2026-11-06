@@ -30,7 +30,7 @@ tests:
             exp_annotations:
               summary: "No aggregator scraper is running"
               description: "The jobs are switched on, but no scraper has asked for work for 36m 0s. Prices are neither checked nor confirmed."
-              runbook: "docs/runbook.md#alerts"
+              runbook: "docs/runbook.md#7-alerts"
       - eval_time: 30m
         alertname: AggregatorPageFailing
         exp_alerts:
@@ -41,7 +41,7 @@ tests:
             exp_annotations:
               summary: "The page https://platform.kimi.ai/docs/pricing/chat of moonshot keeps failing"
               description: "The last 3 checks of https://platform.kimi.ai/docs/pricing/chat failed. Its prices and properties are not updated, and the vendor is not published as complete."
-              runbook: "docs/runbook.md#alerts"
+              runbook: "docs/runbook.md#7-alerts"
       - eval_time: 5m
         alertname: AggregatorDown
         exp_alerts: []
@@ -55,4 +55,4 @@ tests:
             exp_annotations:
               summary: "pacod-aggregator does not answer"
               description: "Prometheus has not reached aggregator for two minutes. Gateways keep the model data they last read."
-              runbook: "docs/runbook.md#alerts"
+              runbook: "docs/runbook.md#7-alerts"
