@@ -14,11 +14,11 @@ fmt-check:
 clippy:
 	cargo clippy --workspace --all-targets -- -D warnings
 
-test-services: ## PostgreSQL for the tests (25435)
+test-services: ## PostgreSQL (25435) and a browser (29150) for the tests
 	scripts/test-services.sh
 
 test: test-services ## Every test
-	cargo test --workspace
+	AGG_TEST_BROWSER_URL=$${AGG_TEST_BROWSER_URL:-http://127.0.0.1:29150} cargo test --workspace
 
 # Writes the OpenAPI document; a test fails when the committed copy is out of date.
 openapi: ## The OpenAPI document, from the code

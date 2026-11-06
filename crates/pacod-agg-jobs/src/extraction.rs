@@ -61,6 +61,8 @@ pub struct PageModel {
     /// The model as the page names it: the id the vendor's API takes, where the page states one,
     /// or an id the catalogue knows the model by, or its name.
     pub model: String,
+    /// Other ids the source gives the same model.
+    pub aliases: Vec<String>,
     pub display_name: Option<String>,
     /// Whether the page states the id the vendor's API takes, rather than only a name. Only a
     /// vendor's own page can say so; a feed never does.
@@ -86,6 +88,7 @@ pub fn models_from_answer(answer: &Value, url: &str) -> PageExtraction {
         }
         let model = PageModel {
             model: named.to_owned(),
+            aliases: Vec::new(),
             display_name: item["display_name"].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned),
             api_id_stated: item["api_id_stated"].as_bool().unwrap_or(false),
             kind: None,
