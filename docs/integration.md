@@ -40,7 +40,7 @@ extraction model in the console's Settings. Until then the catalogue holds what 
 | `PGW_AGGREGATOR_URL` | `http://pacod-aggregator:8150` on `pacod-net`; the address of `AGG_API_SITE` from elsewhere |
 | `PGW_AGGREGATOR_TOKEN` | A service account's token with `agg.consumer`. Empty with `AGG_CATALOG_PUBLIC=true`. |
 
-The gateway asks for its own vendors alone (`?vendor=`) and sends back the ETag.
+The gateway reads the whole catalogue once a day. `?vendor=` and the ETag are there for consumers that want less: it uses neither yet.
 
 The aggregator can in turn use the gateway: `AGG_LLM_URL` at the gateway's OpenAI-compatible
 endpoint and `AGG_LLM_KEY` a gateway key. The extraction model is then a model of that gateway's,
