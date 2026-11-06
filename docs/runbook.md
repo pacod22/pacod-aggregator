@@ -141,6 +141,7 @@ them, nor the price history.
 | `/auth/login` fails with a redirect error | `AGG_CONSOLE_URL` must be the address people use, and match pacod-id's client exactly. |
 | Sign-in answers 404 | pacod-id answers its pages only on the issuer's own host and port. `AGG_ID_ISSUER` must be the address of `AGG_ID_SITE`. |
 | Saving a form answers 403 | `AGG_CONSOLE_URL`, or Caddy's `x-forwarded-proto`, differs from the address in the browser. |
+| A run fails with `N of M pages did not reach the server` | The scraper read them, but the server did not take its reports, and the message holds the first error. A vendor is published only when all its pages arrived, so its data stays as it was. Check `docker logs pacod-aggregator` and PostgreSQL's disk, then **Check now** on **Runs**. The next run otherwise waits for the schedule. |
 | A page always fails | The vendor may refuse the scraper. The last check's message on **Pages** says what it answered. |
 | A page is read but finds nothing | **Runs** shows the extraction's message. A heavily scripted page may need a longer `AGG_SCRAPER_PAGE_TIMEOUT_SECONDS`. |
 | The browser is killed | It needs about 700 MB for a heavy page. `docker inspect agg-browser` shows `OOMKilled`. Raise its limit. |

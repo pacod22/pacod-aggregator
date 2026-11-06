@@ -28,6 +28,31 @@ pub const LEASE_SECONDS: u32 = 180;
 /// How often a run's lease is renewed.
 pub const HEARTBEAT: Duration = Duration::from_secs(60);
 
+/// What a run could not tell the server. The server's record is the run's work: a page it did not
+/// hear of was not checked, and a vendor is published only once all its pages were. So a report
+/// that never arrived is work not done, however well the scraper read the page.
+#[derive(Debug, Default)]
+pub struct Unreported {
+    count: usize,
+    first: Option<String>,
+}
+
+impl Unreported {
+    pub fn add(&mut self, error: String) {
+        self.count += 1;
+        self.first.get_or_insert(error);
+    }
+
+    /// Fails a run that lost a report, and keeps the first error on its record: the log that holds
+    /// the others may be gone by the time someone looks.
+    pub fn check(self, total: usize, what: &str) -> anyhow::Result<()> {
+        match self.first {
+            Some(first) => anyhow::bail!("{} of {total} {what} did not reach the server: {first}", self.count),
+            None => Ok(()),
+        }
+    }
+}
+
 /// The server's internal job API.
 #[derive(Clone)]
 pub struct Server {

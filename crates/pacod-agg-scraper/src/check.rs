@@ -10,7 +10,7 @@ use pacod_agg_jobs::extraction::PageReading;
 use pacod_agg_jobs::jobs::{CheckWork, PageTask};
 use serde_json::{Value, json};
 
-use crate::runner::Runner;
+use crate::runner::{Runner, Unreported};
 use crate::text::{fingerprint, sha256};
 
 /// The largest feed a check reads.
@@ -22,6 +22,7 @@ const MAX_TEXT_CHARS: usize = 2_000_000;
 /// long as the run is this scraper's (`keep`). Returns a summary for the run's record.
 pub async fn run(runner: &Runner, run_id: &str, work: &CheckWork, keep: &AtomicBool) -> anyhow::Result<Value> {
     let mut outcomes: BTreeMap<String, u64> = BTreeMap::new();
+    let mut unreported = Unreported::default();
     let started = Instant::now();
     for task in &work.pages {
         if !keep.load(Ordering::Relaxed) {
@@ -38,11 +39,13 @@ pub async fn run(runner: &Runner, run_id: &str, work: &CheckWork, keep: &AtomicB
                 *outcomes.entry(outcome).or_default() += 1;
             }
             Err(e) => {
-                tracing::warn!(url = %task.url, error = %format!("{e:#}"), "reporting a price page to the server failed");
-                *outcomes.entry("not_reported".into()).or_default() += 1;
+                let error = format!("{e:#}");
+                tracing::warn!(url = %task.url, error = %error, "reporting a price page to the server failed");
+                unreported.add(error);
             }
         }
     }
+    unreported.check(work.pages.len(), "pages")?;
     Ok(json!({ "scraper": { "outcomes": outcomes, "elapsed_ms": started.elapsed().as_millis() as u64 } }))
 }
 

@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use axum::extract::{Path, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use pacod_agg_jobs::egress::EgressPolicy;
@@ -25,7 +25,26 @@ struct Told {
     results: Vec<Value>,
     /// The work of the one run it hands out.
     work: Option<Value>,
+    /// How many reports it takes before it answers 500; `None`: all of them.
+    takes: Option<usize>,
 }
+
+impl Told {
+    /// Whether the next report is one too many. The run's own record still gets through, as with a
+    /// server whose disk is full: changing a row may fit where a new one does not.
+    fn refuses(&mut self) -> bool {
+        match &mut self.takes {
+            Some(0) => true,
+            Some(n) => {
+                *n -= 1;
+                false
+            }
+            None => false,
+        }
+    }
+}
+
+const REFUSED: (StatusCode, &str) = (StatusCode::INTERNAL_SERVER_ERROR, "no space left on device");
 
 type Shared = Arc<Mutex<Told>>;
 
@@ -34,12 +53,21 @@ async fn lease(State(told): State<Shared>, headers: HeaderMap, Json(req): Json<V
     let mut t = told.lock().unwrap();
     t.leases.push(req.clone());
     match (req["job"].as_str(), t.work.take()) {
-        (Some(JOB_CHECK), Some(work)) => Json(json!({ "granted": true, "due": true, "run_id": "run_1", "work": work })),
+        (Some(JOB_CHECK | JOB_SCAN), Some(work)) => {
+            Json(json!({ "granted": true, "due": true, "run_id": "run_1", "work": work }))
+        }
         _ => Json(json!({ "granted": true, "due": false, "run_id": null, "work": null })),
     }
 }
 
-async fn reading(State(told): State<Shared>, Path(_run): Path<String>, Json(r): Json<Value>) -> Json<Value> {
+async fn reading(
+    State(told): State<Shared>,
+    Path(_run): Path<String>,
+    Json(r): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, &'static str)> {
+    if told.lock().unwrap().refuses() {
+        return Err(REFUSED);
+    }
     let outcome = match r["outcome"].as_str() {
         Some("changed") => "read",
         Some(other) => other,
@@ -47,7 +75,17 @@ async fn reading(State(told): State<Shared>, Path(_run): Path<String>, Json(r): 
     }
     .to_owned();
     told.lock().unwrap().readings.push(r);
-    Json(json!({ "outcome": outcome }))
+    Ok(Json(json!({ "outcome": outcome })))
+}
+
+async fn scan_report(
+    State(told): State<Shared>,
+    Path(_run): Path<String>,
+) -> Result<Json<Value>, (StatusCode, &'static str)> {
+    if told.lock().unwrap().refuses() {
+        return Err(REFUSED);
+    }
+    Ok(Json(json!({ "proposed": [] })))
 }
 
 async fn result(State(told): State<Shared>, Path(_run): Path<String>, Json(r): Json<Value>) -> Json<Value> {
@@ -180,6 +218,73 @@ async fn a_server_that_cannot_be_reached_is_an_error_not_a_silent_round() {
         Arc::new(Pages),
     );
     assert!(Arc::new(runner).tick(JOB_CHECK).await.is_err());
+}
+
+/// Runs a job against a server that takes `takes` of its reports, and returns the run's record.
+async fn run_refused(job: &str, work: Value, takes: usize) -> Value {
+    let told: Shared = Arc::default();
+    {
+        let mut t = told.lock().unwrap();
+        t.work = Some(work);
+        t.takes = Some(takes);
+    }
+    let server = serve(
+        Router::new()
+            .route("/internal/v1/jobs/lease", post(lease))
+            .route("/internal/v1/jobs/{run}/readings", post(reading))
+            .route("/internal/v1/jobs/{run}/scan", post(scan_report))
+            .route("/internal/v1/jobs/{run}/heartbeat", post(heartbeat))
+            .route("/internal/v1/jobs/{run}/result", post(result))
+            .with_state(told.clone()),
+    )
+    .await;
+    let runner = Arc::new(Runner::new(
+        Server::new(&server, TOKEN).unwrap(),
+        "agg-scraper-test".to_owned(),
+        Fetcher::new(Arc::new(EgressPolicy::default()), "test").unwrap(),
+        Arc::new(Pages),
+    ));
+    assert!(runner.tick(job).await.unwrap());
+    let results = &told.lock().unwrap().results;
+    assert_eq!(results.len(), 1, "the run ends once");
+    results[0].clone()
+}
+
+#[tokio::test]
+async fn a_check_whose_readings_did_not_reach_the_server_failed() {
+    let known = fingerprint(PRICING, &["gpt-x".to_owned()]);
+    let work = json!({ "extraction": true, "pages": [
+        task("ppg_a", "https://vendor.example/pricing", "page", &known, false),
+        task("ppg_b", "https://vendor.example/pricing", "page", &known, false),
+    ] });
+
+    let run = run_refused(JOB_CHECK, work.clone(), 0).await;
+    assert_eq!(run["ok"], false, "a run that told the server nothing did not succeed");
+    let message = run["message"].as_str().unwrap();
+    assert!(message.starts_with("2 of 2 pages did not reach the server"), "{message}");
+    assert!(message.contains("no space left on device"), "the record says why: {message}");
+
+    // One is enough: a vendor is not published until the server heard of all its pages.
+    let run = run_refused(JOB_CHECK, work.clone(), 1).await;
+    assert_eq!(run["ok"], false);
+    let message = run["message"].as_str().unwrap();
+    assert!(message.starts_with("1 of 2 pages did not reach the server"), "{message}");
+
+    assert_eq!(run_refused(JOB_CHECK, work, 2).await["ok"], true, "every reading arrived");
+}
+
+#[tokio::test]
+async fn a_scan_whose_reports_did_not_reach_the_server_failed() {
+    let vendor = |id: &str| json!({ "vendor_id": id, "name": id, "roots": [], "known_urls": [], "known_models": [] });
+    let work = json!({ "vendors": [vendor("openai"), vendor("xai")], "max_pages_per_vendor": 1,
+                       "min_score": 1.0, "keywords": [] });
+
+    let run = run_refused(JOB_SCAN, work.clone(), 1).await;
+    assert_eq!(run["ok"], false);
+    let message = run["message"].as_str().unwrap();
+    assert!(message.starts_with("1 of 2 vendors did not reach the server"), "{message}");
+
+    assert_eq!(run_refused(JOB_SCAN, work, 2).await["ok"], true, "every report arrived");
 }
 
 /// A browser stuck on a page that never finishes.

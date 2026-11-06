@@ -11,7 +11,7 @@ use pacod_agg_jobs::jobs::{FoundPage, RootStatus, ScanReport, ScanVendor, ScanWo
 use pacod_agg_jobs::pages::normalise_url;
 use serde_json::{Value, json};
 
-use crate::runner::Runner;
+use crate::runner::{Runner, Unreported};
 use crate::score::{keyword_hits, price_lines, score, site_of};
 use crate::sitemap::{Robots, parse_sitemap};
 
@@ -26,6 +26,7 @@ const MAX_CONSIDERED: usize = 5000;
 /// Scans every vendor of the run while the run is this scraper's (`keep`).
 pub async fn run(runner: &Runner, run_id: &str, work: &ScanWork, keep: &AtomicBool) -> anyhow::Result<Value> {
     let mut vendors = Vec::new();
+    let mut unreported = Unreported::default();
     for vendor in &work.vendors {
         if !keep.load(Ordering::Relaxed) {
             anyhow::bail!("the server gave the run to another scraper");
@@ -38,11 +39,13 @@ pub async fn run(runner: &Runner, run_id: &str, work: &ScanWork, keep: &AtomicBo
                 vendors.push(json!({ "vendor": vendor.name, "found": report.found.len(), "proposed": proposed }));
             }
             Err(e) => {
-                tracing::warn!(vendor = %vendor.name, error = %format!("{e:#}"), "reporting a scan to the server failed");
-                vendors.push(json!({ "vendor": vendor.name, "message": format!("{e:#}") }));
+                let error = format!("{e:#}");
+                tracing::warn!(vendor = %vendor.name, error = %error, "reporting a scan to the server failed");
+                unreported.add(error);
             }
         }
     }
+    unreported.check(work.vendors.len(), "vendors")?;
     Ok(json!({ "scraper": { "vendors": vendors } }))
 }
 
