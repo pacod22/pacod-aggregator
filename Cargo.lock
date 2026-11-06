@@ -1516,6 +1516,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pacod-agg-testkit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "pacod-agg-catalog",
+ "pacod-agg-logging",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "pacod-id-authz"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,27 @@
+[package]
+name = "pacod-agg-testkit"
+description = "Test support for pacod-aggregator: a mock of a vendor's site and of the extraction model, and the smoke test. Not shipped."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "agg-mock"
+path = "src/bin/agg-mock.rs"
+
+[[bin]]
+name = "agg-smoke"
+path = "src/bin/agg-smoke.rs"
+
+[dependencies]
+pacod-agg-catalog.workspace = true
+pacod-agg-logging.workspace = true
+
+anyhow.workspace = true
+axum.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true

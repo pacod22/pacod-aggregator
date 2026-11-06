@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/pacod-agg-catalog", "crates/pacod-agg-jobs", "crates/pacod-agg-logging", "crates/pacod-agg", "crates/pacod-agg-scraper"]
+members = ["crates/pacod-agg-catalog", "crates/pacod-agg-jobs", "crates/pacod-agg-logging", "crates/pacod-agg", "crates/pacod-agg-scraper", "crates/pacod-agg-testkit"]
 # pacod-id, vendored by scripts/vendor-pacod-id.sh: its crates are path dependencies, not members.
 exclude = ["vendor"]
 
