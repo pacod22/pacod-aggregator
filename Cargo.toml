@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["crates/pacod-agg-catalog"]
+# pacod-gw and pacod-id, vendored by scripts/vendor-pacod-gw.sh and scripts/vendor-pacod-id.sh:
+# their crates are path dependencies, not members.
+exclude = ["vendor"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.90"
+# Built into images, never published to crates.io.
+publish = false
+
+[workspace.dependencies]
+pacod-agg-catalog = { path = "crates/pacod-agg-catalog" }
+
+# The versions pacod-gw uses, so that one copy of each is built where both meet.
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value", "preserve_order", "float_roundtrip"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "symbols"

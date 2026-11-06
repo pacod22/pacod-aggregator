@@ -1,0 +1,18 @@
+# Rust
+/target/
+
+# UI
+node_modules/
+ui/.svelte-kit/
+ui/build/
+
+# Local config and secrets
+.env
+deploy/.env
+.state/
+
+.DS_Store
+.idea/
+# Local settings of coding assistants
+.claude/
+.kilo/
