@@ -52,12 +52,12 @@
 		<tbody>
 			{#each data.runs as run (run.id)}
 				<tr>
-					<td>{formatDateTime(run.started_at)}</td>
-					<td>{run.job}</td>
-					<td>{run.trigger}</td>
+					<td class="short">{formatDateTime(run.started_at)}</td>
+					<td class="short">{run.job}</td>
+					<td class="short">{run.trigger}</td>
 					<td>
 						<Badge value={outcome(run.ok)} />
-						{#if run.message}<div class="small message">{run.message}</div>{/if}
+						{#if run.message}<div class="small message" title={run.message}>{run.message}</div>{/if}
 					</td>
 					<td class="num">{run.covers.length}</td>
 					<td>
@@ -74,7 +74,10 @@
 				</tr>
 				{#if opened.has(run.id)}
 					<tr id="result-{run.id}">
-						<td colspan="6"><JsonView value={run.result} what="the run's result" /></td>
+						<td colspan="6">
+							{#if run.message}<p class="small full-message">{run.message}</p>{/if}
+							<JsonView value={run.result} what="the run's result" />
+						</td>
 					</tr>
 				{/if}
 			{:else}
@@ -110,8 +113,11 @@
 
 <style>
 	/*
-	 * A fixed layout, so that a long message wraps inside its column instead of squeezing the
-	 * others. A run's result has a row of its own: it is far wider than any column here.
+	 * A fixed layout, so that a long message cannot squeeze the other columns. Those hold short
+	 * values, each sized here to fit, and the console lets a cell break anywhere, so a value would
+	 * otherwise be cut in the middle of a word. A run's result has a row of its own: it is far
+	 * wider than any column here. A message keeps to one line, to keep the rows even and easy to
+	 * scan, and the result's row shows it in full.
 	 */
 	.runs {
 		min-width: 46rem;
@@ -127,10 +133,7 @@
 		width: 5.5rem;
 	}
 
-	.covers {
-		width: 5rem;
-	}
-
+	.covers,
 	.result {
 		width: 6.5rem;
 	}
@@ -140,7 +143,18 @@
 		overflow-wrap: anywhere;
 	}
 
+	.short {
+		white-space: nowrap;
+	}
+
 	.message {
 		margin-top: var(--space-1);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.full-message {
+		margin-bottom: var(--space-2);
 	}
 </style>
