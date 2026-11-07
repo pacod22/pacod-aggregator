@@ -1,5 +1,6 @@
 //! The mock: a vendor's site for the scraper to find and render, and an OpenAI-compatible endpoint
-//! that reads a page's tables as a capable model would.
+//! that reads a page's tables as a capable model would. It lists its models as pacod-gw does, with a
+//! template, so that the console's choice of the gateway's model has something to offer.
 //!
 //! The site is copied from pacod-gw (commit 50fe4b7, `crates/pacod-gw-testkit/src/mock/server.rs`).
 
@@ -111,6 +112,20 @@ async fn completions(Json(body): Json<Value>) -> Response {
     Json(answer).into_response()
 }
 
+/// `GET /v1/models`, in pacod-gw's shape: a model that reads pages, one that cannot, and a template.
+async fn models() -> Json<Value> {
+    let entry = |id: &str, kind: &str, uses: Option<&str>, structured: bool| {
+        json!({ "id": id, "object": "model", "created": 0, "owned_by": if kind == "template" { "template" } else { "mock" },
+                "gateway": { "kind": kind, "model": uses, "deprecated": false,
+                             "capabilities": { "structured_output": structured } } })
+    };
+    Json(json!({ "object": "list", "data": [
+        entry("mock/reader", "model", None, true),
+        entry("mock/embedder", "model", None, false),
+        entry("@mock-reader-template", "template", Some("mock/reader"), true),
+    ] }))
+}
+
 pub fn router() -> Router {
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
@@ -119,6 +134,7 @@ pub fn router() -> Router {
         .route("/__mock/site/{*page}", get(site))
         .route("/__mock/pricing", post(set_variant))
         .route("/v1/chat/completions", post(completions))
+        .route("/v1/models", get(models))
         .with_state(Mock { variant: Arc::new(AtomicU8::new(1)) })
 }
 

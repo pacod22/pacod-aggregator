@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Outcome from '#lib/components/Outcome.svelte';
 	import PageHeader from '#lib/components/PageHeader.svelte';
+	import { gatewayChoices } from '#lib/gateway.ts';
 	import { may } from '#lib/nav.ts';
 	import type { PageProps } from './$types';
 
@@ -8,6 +9,14 @@
 	const manage = $derived(may(data.principal?.permissions ?? [], 'agg.data.manage'));
 	const settings = $derived(data.settings);
 	const gatewayInUse = $derived(settings.mode === 'gateway');
+	// Read: the gateway answered. Not set up, or unreachable, it says nothing of what it offers.
+	const choices = $derived(
+		gatewayChoices(
+			data.gateway?.models ?? [],
+			settings.gateway_model,
+			data.gateway !== null && !data.gateway.problem
+		)
+	);
 	// What the saved mode reads with: the form may show another mode that is not saved yet.
 	const modelInUse = $derived.by(() => {
 		const named = gatewayInUse ? settings.gateway_model : settings.extraction_model;
@@ -80,13 +89,47 @@
 			value={settings.extraction_model ?? ''}
 			placeholder={settings.extraction_model_default ?? ''}
 		/>
-		<label for="gateway_model">Model in gateway mode, by the name the gateway takes</label>
-		<input
-			id="gateway_model"
-			name="gateway_model"
-			value={settings.gateway_model ?? ''}
-			placeholder={settings.gateway_model_default ?? ''}
-		/>
+		<label for="gateway_model">Model in gateway mode, from the gateway's templates and models</label
+		>
+		<!-- Options are marked, never disabled: a disabled option is not posted, so saving the page
+		     would drop the model chosen. -->
+		<select id="gateway_model" name="gateway_model" value={settings.gateway_model ?? ''}>
+			<option value="">
+				{settings.gateway_model_default
+					? `${settings.gateway_model_default}, from AGG_GW_MODEL`
+					: 'None named: AGG_GW_MODEL is empty'}
+			</option>
+			{#if choices.templates.length > 0}
+				<optgroup label="Templates">
+					{#each choices.templates as choice (choice.value)}
+						<option value={choice.value}>{choice.label}</option>
+					{/each}
+				</optgroup>
+			{/if}
+			{#if choices.models.length > 0}
+				<optgroup label="Models">
+					{#each choices.models as choice (choice.value)}
+						<option value={choice.value}>{choice.label}</option>
+					{/each}
+				</optgroup>
+			{/if}
+			{#if choices.missing}
+				<option value={choices.missing.value}>{choices.missing.label}</option>
+			{/if}
+		</select>
+		{#if data.gateway?.problem}
+			<p class="muted small">
+				The gateway's list could not be read: {data.gateway.problem}. The model saved stays as it
+				is.
+			</p>
+		{:else if !settings.gateway_configured}
+			<p class="muted small">AGG_GW_URL is empty, so there is no gateway to list models from.</p>
+		{:else}
+			<p class="muted small">
+				What the gateway offers the aggregator's key: its templates, called as @name, and the models
+				granted to it. A template chooses among its own models.
+			</p>
+		{/if}
 		<label for="extraction_context_window">How much the model takes in at once, in tokens</label>
 		<input
 			id="extraction_context_window"

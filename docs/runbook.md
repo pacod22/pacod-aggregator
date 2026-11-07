@@ -78,7 +78,7 @@ The aggregator's own stack also needs `POSTGRES_PASSWORD`, `PID_DB_PASSWORD`, `P
 | Time zone | `UTC` | The zone of both. |
 | Mode | Follows what is set | How the model is reached: standalone or gateway (section 13). It applies from the next page read, without a restart. |
 | Model in standalone mode | `AGG_LLM_MODEL` | The model that reads pages in that mode. A name saved here takes the variable's place. Left empty, the variable applies. |
-| Model in gateway mode | `AGG_GW_MODEL` | The same in gateway mode, by the gateway's name for the model. |
+| Model in gateway mode | `AGG_GW_MODEL` | Chosen from a list of the gateway's templates and models (section 13). Left at the first entry, the variable applies. |
 | Context window | 200,000 | Sets the size of the parts of a long page. |
 | Calls per run | 60 | The limit on the model calls of one run. |
 | Score to be proposed | 10 | A price counts 2, a known model 3, a keyword 4. |
@@ -162,6 +162,8 @@ them, nor the price history.
 | Every page fails with `the extraction model answered 400` | The message holds the endpoint's reason. Usually it is the name of the limit, `AGG_LLM_MAX_TOKENS_FIELD`, or a model without structured output. See section 13. |
 | A page fails with `did not answer with a JSON object` | The model may have run out of room. See section 13. |
 | Pages are not read after a switch of the mode | **Overview** names what is missing. A mode never falls back to the other, so set its endpoint or model, or choose the other mode. |
+| **Settings** says the gateway's list could not be read | The message holds the reason. `AGG_GW_URL` must be the gateway's address with its `/v1`, and `AGG_GW_KEY` a key it takes. The saved model stays as it is. |
+| A template or model is missing from the gateway's list | The list is what the gateway offers `AGG_GW_KEY`: grant the model to its workspace, or allow the template on the key, at the gateway. |
 | A page is read but finds nothing | **Runs** shows the extraction's message. A heavily scripted page may need a longer `AGG_SCRAPER_PAGE_TIMEOUT_SECONDS`. |
 | The browser is killed | It needs about 700 MB for a heavy page. `docker inspect agg-browser` shows `OOMKilled`. Raise its limit. |
 | A scan takes minutes | That is normal: it renders up to 12 pages per vendor, one at a time, and runs wait for each other. |
@@ -220,6 +222,22 @@ otherwise. **Settings** shows the mode in use, and saving that page stores it.
 | Each key goes only to its own address. | The address and key are paired in the environment. The console picks a pair and sees neither. |
 | A mode never falls back to the other. | That would change who is paid and who sees the pages without anyone choosing it. Pages wait, and **Overview** names the missing variable. |
 | A mode that is not set up can still be chosen. | **Settings** marks it, and **Overview** says what is missing. A variable can disappear after the choice anyway. |
+
+In gateway mode the model is chosen from a list, which the server asks the gateway for when
+**Settings** opens: `GET /v1/models` at `AGG_GW_URL`, with `AGG_GW_KEY`. It holds what that key may
+call:
+
+| Entry | What |
+|---|---|
+| The first | No name saved: `AGG_GW_MODEL` applies. |
+| Templates | The workspace's templates the key may use, as `@name`. A template chooses among its own models, and the entry says which it uses now. |
+| Models | The models granted to the key's workspace. |
+| Marked "cannot read pages" | A model without structured output. It is listed because the gateway offers it, but every page it reads fails. |
+| Marked "not offered by the gateway now" | The saved name, where the gateway answered and no longer lists it. It stays chosen until someone changes it, so saving the page for another reason keeps it. |
+| Marked "saved" | The saved name, while the gateway cannot be asked. Nothing is known of whether it still offers it. |
+
+The list names models only: never the gateway's address or key. When the gateway cannot be asked,
+**Settings** says why, still loads, and keeps the saved model.
 
 The endpoint has to meet these conditions:
 

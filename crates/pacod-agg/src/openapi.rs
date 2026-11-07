@@ -10,6 +10,7 @@ use serde_json::{Map, Value, json};
 use crate::api::ErrorBody;
 use crate::api::admin::{ModelDetail, ModelList, Session};
 use crate::api::resources::{PageView, SettingsInput, SettingsView};
+use crate::gateway::GatewayOffers;
 use crate::jobs::StatusView;
 use crate::store::jobs::JobRun;
 use crate::store::models::{Change, PriceRow};
@@ -167,6 +168,19 @@ pub fn document() -> Value {
         op("catalog", "The catalogue, as /v1/catalog answers it", 200, None, catalogue, vendors),
     );
 
+    let offers = doc.schema::<GatewayOffers>();
+    doc.op(
+        "get",
+        "/api/v1/gateway/models",
+        op(
+            "settings",
+            "What the gateway of gateway mode offers: its models and templates",
+            200,
+            None,
+            Some(offers),
+            &[],
+        ),
+    );
     let (settings, settings_in) = (doc.schema::<SettingsView>(), doc.schema::<SettingsInput>());
     doc.op("get", "/api/v1/settings", op("settings", "The settings", 200, None, Some(settings.clone()), &[]));
     doc.op(

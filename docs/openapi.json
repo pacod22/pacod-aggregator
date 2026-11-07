@@ -1127,6 +1127,37 @@
         ]
       }
     },
+    "/api/v1/gateway/models": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "What the gateway of gateway mode offers: its models and templates",
+        "operationId": "get_api_v1_gateway_models",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayOffers"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "tags": [
@@ -2062,6 +2093,71 @@
           "url"
         ],
         "description": "A page as an administrator adds or changes it. Its status changes through confirm and dismiss;\nwhat the scan saw about it stays as the scan saw it."
+      },
+      "GatewayOffers": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Offer"
+            }
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "description": "What the gateway offers, templates first."
+      },
+      "Offer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A model's id, or a template's name with its `@`, as `gateway_model` takes it."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OfferKind"
+          },
+          "uses": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For a template: the model it uses now."
+          },
+          "structured_output": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether its answers can be held to a JSON schema, which reading a page needs: for a\ntemplate, whether every one of its models can. Null where the gateway does not say."
+          },
+          "deprecated": {
+            "type": "boolean",
+            "description": "The gateway marks it as deprecated."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "deprecated"
+        ],
+        "description": "One thing the gateway offers: a value for `gateway_model`."
+      },
+      "OfferKind": {
+        "oneOf": [
+          {
+            "type": "string",
+            "const": "template",
+            "description": "A template of the gateway's: called as `@name`, it chooses among its models itself."
+          },
+          {
+            "type": "string",
+            "const": "model",
+            "description": "A model granted to the key's workspace."
+          }
+        ]
       },
       "SettingsView": {
         "type": "object",

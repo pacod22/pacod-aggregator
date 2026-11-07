@@ -21,11 +21,13 @@ neither a key nor data, so a browser taken over by a page has nothing to reach f
 
 Reading a page is the only call of a model. The scan and settling are rules, so that what a consumer
 relies on (section 5) holds whatever a model answers. The console chooses how the model is reached:
-standalone mode calls a provider's own endpoint, and gateway mode calls through a pacod-gw. Each mode
-has its own model, the one named in the console or else the operator's `AGG_LLM_MODEL` or
-`AGG_GW_MODEL`. The endpoints and keys are the operator's alone, in the environment. The console picks
-one of the two pairs, sees neither, and a mode without its endpoint waits instead of using the other.
-pacod-gw is one choice of endpoint, not a dependency.
+standalone mode calls a provider's own endpoint, and gateway mode calls through a pacod-gw. Each
+mode has its own model, the one named in the console or else the operator's `AGG_LLM_MODEL` or
+`AGG_GW_MODEL`. The endpoints and keys are the operator's alone, in the environment. The console
+picks one of the two pairs, sees neither, and a mode without its endpoint waits instead of using the
+other. In gateway mode the console chooses the model from the gateway's list of what its key may
+call, which the server asks for on its behalf (`GET /api/v1/gateway/models`). pacod-gw is one choice
+of endpoint, not a dependency.
 
 ```text
 vendor sites <-- proxy (in agg-scraper) <-- agg-browser

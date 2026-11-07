@@ -271,6 +271,9 @@ async fn console(s: &Smoke) -> anyhow::Result<()> {
     ensure!(names("extraction_model_default"), "the settings page does not say which model is in use");
     ensure!(names("gateway_model_default"), "the settings page does not name the gateway's model");
     let mode = before["mode"].as_str().context("the settings do not say which mode is in use")?.to_owned();
+    // The gateway's model is chosen from what the gateway offers: agg-mock lists a template.
+    let template = "@mock-reader-template";
+    ensure!(page.contains(&format!("<option value=\"{template}\"")), "the settings page does not offer {template}");
     let joined = |v: &Value| {
         v.as_array().map_or(String::new(), |list| list.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "))
     };
@@ -312,9 +315,9 @@ async fn console(s: &Smoke) -> anyhow::Result<()> {
     step("the settings form says what the server holds", "");
 
     // The switch itself: the form changes the mode, needs no restart, and the choice can be undone.
-    // The gateway's model goes along, and leaves again, because the development file names none here.
+    // The gateway's template goes along, and leaves again, because the development file names none.
     let other = if mode == "gateway" { "standalone" } else { "gateway" };
-    for (next, version, model) in [(other, version, "mock/named-here"), (mode.as_str(), version + 1, "")] {
+    for (next, version, model) in [(other, version, template), (mode.as_str(), version + 1, "")] {
         let kept = fields.iter().filter(|(name, _)| !["mode", "version", "gateway_model"].contains(&name.as_str()));
         let mut sent: Vec<(String, String)> = kept.cloned().collect();
         sent.extend([
@@ -330,6 +333,8 @@ async fn console(s: &Smoke) -> anyhow::Result<()> {
         let page = http.get(format!("{base}/settings")).header("cookie", &session).send().await?.text().await?;
         let selected = format!("<option value=\"{next}\" selected");
         ensure!(page.contains(&selected), "the settings page does not show {next}, the mode in use");
+        let selected = format!("<option value=\"{model}\" selected");
+        ensure!(page.contains(&selected), "the settings page does not show {model:?}, the gateway's model saved");
     }
     step("the settings form switches between the modes", "");
     Ok(())

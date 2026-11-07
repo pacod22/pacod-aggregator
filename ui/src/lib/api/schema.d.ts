@@ -367,6 +367,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gateway/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the gateway of gateway mode offers: its models and templates */
+        get: operations["get_api_v1_gateway_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -712,6 +729,26 @@ export interface components {
             /** @default  */
             notes?: string;
         };
+        /** @description What the gateway offers, templates first. */
+        GatewayOffers: {
+            models: components["schemas"]["Offer"][];
+        };
+        /** @description One thing the gateway offers: a value for `gateway_model`. */
+        Offer: {
+            /** @description A model's id, or a template's name with its `@`, as `gateway_model` takes it. */
+            id: string;
+            kind: components["schemas"]["OfferKind"];
+            /** @description For a template: the model it uses now. */
+            uses?: string | null;
+            /**
+             * @description Whether its answers can be held to a JSON schema, which reading a page needs: for a
+             *     template, whether every one of its models can. Null where the gateway does not say.
+             */
+            structured_output?: boolean | null;
+            /** @description The gateway marks it as deprecated. */
+            deprecated: boolean;
+        };
+        OfferKind: "template" | "model";
         /**
          * @description The settings, and the version to send back with a change. It says whether each mode has an
          *     endpoint and never what it is: this is shown to anyone who may read the console.
@@ -1772,6 +1809,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description A problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_api_v1_gateway_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatewayOffers"];
                 };
             };
             /** @description A problem */

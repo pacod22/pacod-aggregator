@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::auth::{Manager, Reader};
 use super::{ApiError, ApiResult, AppState};
+use crate::gateway::{self, GatewayOffers};
 use crate::settings::Settings;
 use crate::store::pages::{Page, PageInput, PageState, Saved};
 use crate::store::vendors::{Vendor, VendorInput};
@@ -275,6 +276,12 @@ pub struct SettingsInput {
     pub version: i32,
 }
 
+/// What the gateway of gateway mode offers, for the settings page's choice of its model. Anyone who
+/// may read the settings may see it: it names models, nothing else.
+async fn gateway_offers(State(st): State<AppState>, _: Reader) -> ApiResult<Json<GatewayOffers>> {
+    Ok(Json(gateway::offers(&st).await?))
+}
+
 async fn settings(State(st): State<AppState>, _: Reader) -> ApiResult<Json<SettingsView>> {
     let (settings, version) = st.settings().await?;
     Ok(Json(SettingsView::of(&st, settings, version)))
@@ -309,4 +316,5 @@ pub fn routes() -> Router<AppState> {
         .route("/pages/{id}/dismiss", post(dismiss))
         .route("/pages/{id}/check", post(check))
         .route("/settings", get(settings).put(settings_save))
+        .route("/gateway/models", get(gateway_offers))
 }

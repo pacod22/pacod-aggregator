@@ -15,6 +15,7 @@ use tokio::sync::watch;
 pub mod api;
 pub mod catalog;
 pub mod config;
+pub mod gateway;
 pub mod identity;
 pub mod jobs;
 pub mod metrics;

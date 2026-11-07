@@ -46,10 +46,13 @@ The gateway reads the whole catalogue once a day. `?vendor=` and the ETag are th
 
 The aggregator can in turn use the gateway: gateway mode on **Settings**, with `AGG_GW_URL` at the
 gateway's OpenAI-compatible endpoint and `AGG_GW_KEY` a gateway key. The extraction model is then a
-model of that gateway's, named in Settings or as `AGG_GW_MODEL`. This is one choice of endpoint, not
-a dependency: in standalone mode the aggregator calls a provider and runs without a gateway, in the
-full stack too ([runbook.md](runbook.md) section 13). The two do not depend on each other to start: a
-gateway keeps the model data it last read, and pages wait for the model.
+model of that gateway's, chosen in Settings from the gateway's `GET /v1/models`, or named as
+`AGG_GW_MODEL`. That list holds what the key may call: the models granted to its workspace and the
+templates it may use, so grant and allow there what the aggregator should choose from. This is one
+choice of endpoint, not a dependency: in standalone mode the aggregator calls a provider and runs
+without a gateway, in the full stack too ([runbook.md](runbook.md) section 13). The two do not
+depend on each other to start: a gateway keeps the model data it last read, and pages wait for the
+model.
 
 ## 3. pacod-id
 
