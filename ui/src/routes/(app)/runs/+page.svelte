@@ -5,12 +5,18 @@
 	import PageHeader from '#lib/components/PageHeader.svelte';
 	import { formatDateTime } from '#lib/format.ts';
 	import { may } from '#lib/nav.ts';
+	import { SvelteSet } from 'svelte/reactivity';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
 	const manage = $derived(may(data.principal?.permissions ?? [], 'agg.data.manage'));
 	const outcome = (ok: boolean | null | undefined) =>
 		ok === null || ok === undefined ? 'running' : ok ? 'ok' : 'failed';
+
+	const opened = new SvelteSet<string>();
+	const toggle = (id: string) => {
+		if (!opened.delete(id)) opened.add(id);
+	};
 </script>
 
 <PageHeader
@@ -32,15 +38,15 @@
 <Outcome {form} />
 
 <div class="table-wrap">
-	<table>
+	<table class="runs">
 		<thead>
 			<tr>
-				<th>Started (UTC)</th>
-				<th>Job</th>
-				<th>Why</th>
+				<th class="started">Started (UTC)</th>
+				<th class="job">Job</th>
+				<th class="why">Why</th>
 				<th>Outcome</th>
-				<th class="num">Covers</th>
-				<th>Result</th>
+				<th class="num covers">Covers</th>
+				<th class="result">Result</th>
 			</tr>
 		</thead>
 		<tbody>
@@ -51,16 +57,26 @@
 					<td>{run.trigger}</td>
 					<td>
 						<Badge value={outcome(run.ok)} />
-						{#if run.message}<div class="small">{run.message}</div>{/if}
+						{#if run.message}<div class="small message">{run.message}</div>{/if}
 					</td>
 					<td class="num">{run.covers.length}</td>
 					<td>
-						<details>
-							<summary>Details</summary>
-							<JsonView value={run.result} what="the run's result" />
-						</details>
+						<button
+							class="btn btn-quiet"
+							type="button"
+							aria-expanded={opened.has(run.id)}
+							aria-controls="result-{run.id}"
+							onclick={() => toggle(run.id)}
+						>
+							{opened.has(run.id) ? 'Hide' : 'Details'}
+						</button>
 					</td>
 				</tr>
+				{#if opened.has(run.id)}
+					<tr id="result-{run.id}">
+						<td colspan="6"><JsonView value={run.result} what="the run's result" /></td>
+					</tr>
+				{/if}
 			{:else}
 				<tr><td colspan="6" class="muted">No run yet.</td></tr>
 			{/each}
@@ -91,3 +107,40 @@
 		</table>
 	</div>
 </section>
+
+<style>
+	/*
+	 * A fixed layout, so that a long message wraps inside its column instead of squeezing the
+	 * others. A run's result has a row of its own: it is far wider than any column here.
+	 */
+	.runs {
+		min-width: 46rem;
+		table-layout: fixed;
+	}
+
+	.started {
+		width: 9.5rem;
+	}
+
+	.job,
+	.why {
+		width: 5.5rem;
+	}
+
+	.covers {
+		width: 5rem;
+	}
+
+	.result {
+		width: 6.5rem;
+	}
+
+	.runs td {
+		vertical-align: top;
+		overflow-wrap: anywhere;
+	}
+
+	.message {
+		margin-top: var(--space-1);
+	}
+</style>
