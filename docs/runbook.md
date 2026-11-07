@@ -41,7 +41,8 @@ All go in `deploy/.env`, which git ignores. Never print it, and never print the 
 | `AGG_UI_CLIENT_SECRET` | The console at pacod-id. | `openssl rand -hex 32` |
 | `AGG_UI_SESSION_SECRET` | Seals the console's cookie. At least 32 characters. | `openssl rand -hex 32` |
 | `AGG_INTERNAL_TOKEN` | The scraper on the internal API. At least 16 characters. | `openssl rand -hex 32` |
-| `AGG_LLM_KEY` | The key of the extraction model's endpoint. | From the provider, or from the gateway. |
+| `AGG_LLM_KEY` | The key of the extraction model's endpoint in standalone mode. | From the provider. |
+| `AGG_GW_KEY` | The aggregator's key at pacod-gw, for gateway mode. | From the gateway. |
 
 The aggregator's own stack also needs `POSTGRES_PASSWORD`, `PID_DB_PASSWORD`, `PID_KEK`
 (`openssl rand -base64 32`), `PID_TOKEN_PEPPER` and `ID_ADMIN_PASSWORD`.
@@ -57,9 +58,10 @@ The aggregator's own stack also needs `POSTGRES_PASSWORD`, `PID_DB_PASSWORD`, `P
 5. The server starts with a list of vendors, and scans their sites at once. That takes minutes.
 6. On **Pages**, confirm the pages that list models and prices, and dismiss the others. Until
    then only the OpenRouter and LiteLLM lists are read.
-7. Point `AGG_LLM_URL` and `AGG_LLM_KEY` at an OpenAI-compatible endpoint, a provider's own
-   (section 13) or a gateway's, and name a chat model with structured output, as `AGG_LLM_MODEL` or
-   on **Settings**. Without one, pages are fetched but not read.
+7. Set the endpoint that reads the pages: `AGG_LLM_URL` and `AGG_LLM_KEY` for a provider's own,
+   `AGG_GW_URL` and `AGG_GW_KEY` for a pacod-gw, or both (section 13). Name a chat model with
+   structured output, as `AGG_LLM_MODEL` or `AGG_GW_MODEL`, or on **Settings**. Without one, pages
+   are fetched but not read.
 8. On **Vendors**, mark a vendor complete once its pages list all its models. Gateways retire
    models only for a complete vendor.
 9. For a gateway, make a service account with `agg.consumer` at pacod-id, and
@@ -74,7 +76,9 @@ The aggregator's own stack also needs `POSTGRES_PASSWORD`, `PID_DB_PASSWORD`, `P
 | Check | `17 2 * * *` | When the confirmed pages are read. |
 | Scan | `41 4 * * 1` | When the sites are scanned. |
 | Time zone | `UTC` | The zone of both. |
-| Extraction model | `AGG_LLM_MODEL` | The model that reads pages. A name saved here takes the variable's place. Left empty, the variable applies. |
+| Mode | Follows what is set | How the model is reached: standalone or gateway (section 13). It applies from the next page read, without a restart. |
+| Model in standalone mode | `AGG_LLM_MODEL` | The model that reads pages in that mode. A name saved here takes the variable's place. Left empty, the variable applies. |
+| Model in gateway mode | `AGG_GW_MODEL` | The same in gateway mode, by the gateway's name for the model. |
 | Context window | 200,000 | Sets the size of the parts of a long page. |
 | Calls per run | 60 | The limit on the model calls of one run. |
 | Score to be proposed | 10 | A price counts 2, a known model 3, a keyword 4. |
@@ -82,9 +86,10 @@ The aggregator's own stack also needs `POSTGRES_PASSWORD`, `PID_DB_PASSWORD`, `P
 
 The form is refused if someone else saved in between. Load it again.
 
-One model does all the reading. The scan and settling into the catalogue call none. Its address and
-key are never settings: they stay in the environment, because this page is shown to every viewer and
-an address that could be edited could send the key elsewhere.
+One model does all the reading. The scan and settling into the catalogue call none. Addresses and
+keys are never settings: they stay in the environment, because this page is shown to every viewer
+and an address that could be edited could send a key elsewhere. **Mode** only picks between the two
+endpoints the operator set. The page says whether each is set up, and never what it is.
 
 ## 6. Health checks
 
@@ -115,6 +120,12 @@ Gateways have their own alert on stale prices: `GatewayCatalogSyncStale` in paco
 Rebuilding `agg-browser` takes Chromium's security fixes, so do it even without a release:
 `make images` passes the day, which makes it fetch the newest one.
 
+An `AGG_LLM_URL` that points at a gateway keeps working after the upgrade that added the modes, but
+it reads as standalone. Move it to `AGG_GW_URL`, `AGG_GW_KEY` and `AGG_GW_MODEL`. In the full stack,
+pacod-demo makes that move itself once it is updated too, so the stack runs in gateway mode after
+`make up`. Either way, a model saved on **Settings** before the upgrade is now standalone mode's.
+Enter it again as the model in gateway mode. Until then pages wait, and **Overview** says why.
+
 ## 9. Backup and restore
 
 Only PostgreSQL holds anything. The rest can be built again.
@@ -135,7 +146,7 @@ them, nor the price history.
 | `AGG_UI_SESSION_SECRET` | Change it, and recreate the console. | Everyone is signed out. |
 | `AGG_ID_CLIENT_SECRET`, `AGG_UI_CLIENT_SECRET` | Change it at pacod-id and here, and recreate. | Sign-in or the feed fails in between. |
 | `AGG_DB_PASSWORD` | Change it, and run `pacod-db-init` again, which sets it. | A moment without a database. |
-| `AGG_LLM_KEY` | Change it, and recreate the server. | Pages wait. |
+| `AGG_LLM_KEY`, `AGG_GW_KEY` | Change it, and recreate the server. | Pages wait, in the mode that uses it. |
 
 ## 11. When something fails
 
@@ -150,6 +161,7 @@ them, nor the price history.
 | A page always fails | The vendor may refuse the scraper. The last check's message on **Pages** says what it answered. |
 | Every page fails with `the extraction model answered 400` | The message holds the endpoint's reason. Usually it is the name of the limit, `AGG_LLM_MAX_TOKENS_FIELD`, or a model without structured output. See section 13. |
 | A page fails with `did not answer with a JSON object` | The model may have run out of room. See section 13. |
+| Pages are not read after a switch of the mode | **Overview** names what is missing. A mode never falls back to the other, so set its endpoint or model, or choose the other mode. |
 | A page is read but finds nothing | **Runs** shows the extraction's message. A heavily scripted page may need a longer `AGG_SCRAPER_PAGE_TIMEOUT_SECONDS`. |
 | The browser is killed | It needs about 700 MB for a heavy page. `docker inspect agg-browser` shows `OOMKilled`. Raise its limit. |
 | A scan takes minutes | That is normal: it renders up to 12 pages per vendor, one at a time, and runs wait for each other. |
@@ -173,30 +185,53 @@ it scans real vendors' sites on its schedule, as any installation does.
 The development secrets are fixed and public. They are never `${NAME:-default}`, which would let
 `deploy/.env` in.
 
-## 13. Without a gateway
+## 13. Standalone and gateway mode
 
-The aggregator needs no gateway. It calls whatever `AGG_LLM_URL` names, and nothing else ties it to
-pacod-gw. To have a provider read the pages directly, set these in `deploy/.env` and recreate the
-server:
+The aggregator reaches its model in one of two ways. **Mode** on **Settings** chooses between them,
+and the choice applies from the next page read, without a restart.
+
+| Mode | The call goes to | Variables |
+|---|---|---|
+| Standalone | A provider's own endpoint. | `AGG_LLM_URL`, `AGG_LLM_KEY`, `AGG_LLM_MODEL`, `AGG_LLM_MAX_TOKENS_FIELD` |
+| Gateway | A pacod-gw, which accounts each call. | `AGG_GW_URL`, `AGG_GW_KEY`, `AGG_GW_MODEL` |
+
+This is not `docker-compose.standalone.yml`, which decides where the shared components come from.
+Either mode runs on either stack.
+
+Set one or both in `deploy/.env` and recreate the server:
 
 ```sh
 AGG_LLM_URL=https://api.openai.com/v1
 AGG_LLM_KEY=<the provider's key>
 AGG_LLM_MODEL=<a chat model with structured output>
 AGG_LLM_MAX_TOKENS_FIELD=max_completion_tokens
+
+AGG_GW_URL=http://pacod-gw:8080/v1
+AGG_GW_KEY=<a key of that gateway's>
+AGG_GW_MODEL=<the model, as the gateway names it>
 ```
+
+Until a mode is chosen, the aggregator uses the gateway if only `AGG_GW_URL` is set, and standalone
+otherwise. **Settings** shows the mode in use, and saving that page stores it.
+
+| Rule | Why |
+|---|---|
+| Each mode has its own model. | A gateway's name for a model is not a provider's. A switch needs no change of the model, and the other mode's name is kept. |
+| Each key goes only to its own address. | The address and key are paired in the environment. The console picks a pair and sees neither. |
+| A mode never falls back to the other. | That would change who is paid and who sees the pages without anyone choosing it. Pages wait, and **Overview** names the missing variable. |
+| A mode that is not set up can still be chosen. | **Settings** marks it, and **Overview** says what is missing. A variable can disappear after the choice anyway. |
 
 The endpoint has to meet these conditions:
 
 | Condition | Why |
 |---|---|
-| It speaks OpenAI's Chat Completions API, with a bearer key. | The call goes to `AGG_LLM_URL` followed by `/chat/completions`, so the address includes its `/v1`. |
+| It speaks OpenAI's Chat Completions API, with a bearer key. | The call goes to the address followed by `/chat/completions`, so the address includes its `/v1`. |
 | It takes `response_format` with a strict `json_schema`. | Every answer is held to that shape. An endpoint that refuses it fails every page. |
-| `AGG_LLM_MAX_TOKENS_FIELD` is the name it takes. | OpenAI's newer models refuse `max_tokens`, and other endpoints may refuse `max_completion_tokens`. A gateway translates it, so leave it as it is there. |
+| In standalone mode, `AGG_LLM_MAX_TOKENS_FIELD` is the name it takes. | OpenAI's newer models refuse `max_tokens`, and other endpoints may refuse `max_completion_tokens`. A gateway translates it, so gateway mode does not read this variable. |
 
 Anthropic's Messages API, Gemini and Azure OpenAI each differ from this. They go through a pacod-gw.
 
-Two things change when no gateway is in between:
+Two things change in standalone mode:
 
 - **Cost.** A gateway accounts each call, and its key can carry a spending cap. A direct key has
   neither here. `max_extractions_per_run` is the only limit in the aggregator, so set a spending
@@ -206,7 +241,8 @@ Two things change when no gateway is in between:
   fails with `the extraction model did not answer with a JSON object`. Try a model that reasons
   less, or a **Context window** on **Settings** under 64,000, which gives each call less to read.
 
-In the full stack, set these in pacod-demo instead: `AGG_LLM_URL`, `AGG_LLM_MODEL` and
-`AGG_LLM_MAX_TOKENS_FIELD` in `demo.env`, and `AGG_LLM_KEY` in `demo.local.env`, then `make up`. With
-`AGG_LLM_URL` empty it uses the gateway and the aggregator's key there. With it set, that key is
-never sent to the endpoint named.
+In the full stack, pacod-demo always sets gateway mode's variables, to the gateway and the
+aggregator's key there. To offer standalone mode as well, set `AGG_LLM_URL`, `AGG_LLM_MODEL` and
+`AGG_LLM_MAX_TOKENS_FIELD` in `demo.env`, and `AGG_LLM_KEY` in `demo.local.env`, then `make up`.
+`AGG_GW_MODEL` names the gateway's model there. Both endpoints are then on the server, each with its
+own key, and the gateway's key is never sent to the endpoint named.

@@ -2086,12 +2086,30 @@
             "description": "The IANA time zone the schedules are read in.",
             "default": "UTC"
           },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Mode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the extraction model is reached. Empty: gateway where only `AGG_GW_URL` is set, otherwise\nstandalone. There is no falling back from one to the other: a mode without its endpoint waits."
+          },
           "extraction_model": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The model that reads the pages, by the name its endpoint takes: a chat model with\nstructured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until one of\nthe two names a model."
+            "description": "The model that reads the pages in standalone mode, by the name its endpoint takes: a chat\nmodel with structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until\none of the two names a model."
+          },
+          "gateway_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model that reads the pages in gateway mode, by the name the gateway takes. The names\ndiffer, which is why a switch of the mode needs no change here. Empty: the operator's\n`AGG_GW_MODEL`."
           },
           "extraction_context_window": {
             "type": "integer",
@@ -2143,13 +2161,45 @@
               "string",
               "null"
             ],
-            "description": "The operator's `AGG_LLM_MODEL`, used while `extraction_model` is empty. It is set in the\nenvironment and cannot be changed here."
+            "description": "The operator's `AGG_LLM_MODEL`, used in standalone mode while `extraction_model` is empty.\nIt is set in the environment and cannot be changed here."
+          },
+          "gateway_model_default": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The operator's `AGG_GW_MODEL`, used in gateway mode while `gateway_model` is empty. It is set\nin the environment and cannot be changed here."
+          },
+          "standalone_configured": {
+            "type": "boolean",
+            "description": "Whether the environment names an endpoint for standalone mode (`AGG_LLM_URL`)."
+          },
+          "gateway_configured": {
+            "type": "boolean",
+            "description": "Whether the environment names an endpoint for gateway mode (`AGG_GW_URL`)."
           }
         },
         "required": [
-          "version"
+          "version",
+          "standalone_configured",
+          "gateway_configured"
         ],
-        "description": "The settings, and the version to send back with a change."
+        "description": "The settings, and the version to send back with a change. It says whether each mode has an\nendpoint and never what it is: this is shown to anyone who may read the console."
+      },
+      "Mode": {
+        "oneOf": [
+          {
+            "type": "string",
+            "const": "standalone",
+            "description": "The aggregator calls a provider's endpoint itself (`AGG_LLM_URL`)."
+          },
+          {
+            "type": "string",
+            "const": "gateway",
+            "description": "The aggregator calls through a pacod-gw (`AGG_GW_URL`), which accounts each call."
+          }
+        ],
+        "description": "How the extraction model is reached. This is not `docker-compose.standalone.yml`, which is about\nwhere the shared components come from: either mode runs on either stack."
       },
       "ScanSettings": {
         "type": "object",
@@ -2207,12 +2257,30 @@
             "description": "The IANA time zone the schedules are read in.",
             "default": "UTC"
           },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Mode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the extraction model is reached. Empty: gateway where only `AGG_GW_URL` is set, otherwise\nstandalone. There is no falling back from one to the other: a mode without its endpoint waits."
+          },
           "extraction_model": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The model that reads the pages, by the name its endpoint takes: a chat model with\nstructured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until one of\nthe two names a model."
+            "description": "The model that reads the pages in standalone mode, by the name its endpoint takes: a chat\nmodel with structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until\none of the two names a model."
+          },
+          "gateway_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model that reads the pages in gateway mode, by the name the gateway takes. The names\ndiffer, which is why a switch of the mode needs no change here. Empty: the operator's\n`AGG_GW_MODEL`."
           },
           "extraction_context_window": {
             "type": "integer",

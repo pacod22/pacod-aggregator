@@ -447,15 +447,21 @@ fn problems(st: &AppState, s: &Settings, scraper: &ScraperView, pages: &[Page], 
         out.push(format!("The scraper cannot reach its browser: {}.", b.message.trim_end_matches('.')));
     }
     let reads_pages = active(pages, vendors).any(|p| p.kind == "page");
+    let mode = st.config.mode(s);
     if reads_pages && st.config.extraction_model(s).is_none() {
-        out.push(
-            "No extraction model is set, in the settings or as AGG_LLM_MODEL: pages are checked, but nothing \
-             reads them."
-                .into(),
-        );
+        out.push(format!(
+            "No extraction model is set for {} mode, in the settings or as {}: pages are checked, but nothing \
+             reads them.",
+            mode.name(),
+            mode.model_variable(),
+        ));
     }
-    if reads_pages && st.config.llm.is_none() {
-        out.push("AGG_LLM_URL is not set: pages are checked, but no model can be called.".into());
+    if reads_pages && st.config.link(s).is_none() {
+        out.push(format!(
+            "{} is not set, so {} mode has no endpoint: pages are checked, but no model can be called.",
+            mode.url_variable(),
+            mode.name(),
+        ));
     }
     if active(pages, vendors).next().is_none() {
         out.push("No page is confirmed for any vendor: confirm the pages the scan proposes, or add some.".into());

@@ -1,3 +1,4 @@
+import type { components } from '#lib/api/schema.d.ts';
 import { checked, given, number, text, words } from '#lib/form.ts';
 import { act, read } from '#lib/server/read.ts';
 import type { Actions, PageServerLoad } from './$types';
@@ -18,7 +19,10 @@ export const actions: Actions = {
 					schedule: text(form, 'schedule'),
 					scan_schedule: text(form, 'scan_schedule'),
 					time_zone: text(form, 'time_zone'),
+					// The server refuses a name it does not know.
+					mode: (text(form, 'mode') || null) as components['schemas']['Mode'] | null,
 					extraction_model: text(form, 'extraction_model') || null,
+					gateway_model: text(form, 'gateway_model') || null,
 					...given({
 						extraction_context_window: number(form, 'extraction_context_window'),
 						max_extractions_per_run: number(form, 'max_extractions_per_run')

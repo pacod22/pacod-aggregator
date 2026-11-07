@@ -52,6 +52,8 @@ impl Server {
             internal_token: Some(INTERNAL.into()),
             llm: None,
             llm_model: None,
+            gateway: None,
+            gateway_model: None,
             egress_allow_private: vec![],
         };
         adjust(&mut config);

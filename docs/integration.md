@@ -16,7 +16,7 @@ below.
 | 3 | `platform.yml` | **pacod-db-init:** `AGG_DB_PASSWORD`, and mount `../pacod-aggregator/platform/postgres/agg-db.sh`.<br>**pacod-caddy:** `AGG_SITE`, `AGG_API_SITE`, `AGG_CADDY_LOG_FORMAT`; mount `../pacod-aggregator/platform/caddy/agg.caddy:/etc/caddy/sites/agg.caddy:ro`; aliases `agg.${DEMO_DOMAIN}` and `agg-api.${DEMO_DOMAIN}`.<br>**pacod-prometheus:** mount `../pacod-aggregator/platform/prometheus/agg.yml:/etc/prometheus/scrape.d/agg.yml:ro` and `../pacod-aggregator/deploy/prometheus/rules:/etc/prometheus/rules/agg:ro`.<br>**pacod-grafana:** mount `../pacod-aggregator/deploy/grafana/dashboards:/etc/grafana/dashboards/agg:ro`. |
 | 4 | `config/prometheus.yml` | Add `/etc/prometheus/rules/agg/*.yml` to `rule_files` |
 | 5 | `config/grafana/dashboards.yml` | A provider `pacod-aggregator` (folder and uid), path `/etc/grafana/dashboards/agg` |
-| 6 | `scripts/render-env.sh` | Writes `AGG_LLM_URL` and `AGG_LLM_KEY` to `.state/env/agg.env`: the gateway's data plane and `AGG_GW_KEY`, unless `demo.env` names an endpoint, then that and its own `AGG_LLM_KEY`. Also `AGG_LLM_MODEL` and `AGG_LLM_MAX_TOKENS_FIELD`. |
+| 6 | `scripts/render-env.sh` | Writes both modes' endpoints to `.state/env/agg.env`: always `AGG_GW_URL` (the gateway's data plane), `AGG_GW_KEY` and `AGG_GW_MODEL`, and `AGG_LLM_URL`, `AGG_LLM_KEY`, `AGG_LLM_MODEL` and `AGG_LLM_MAX_TOKENS_FIELD` as `demo.env` names them. With no `AGG_LLM_URL` and no `AGG_GW_MODEL`, `AGG_LLM_MODEL` names the gateway's model, as it did before there were modes. |
 | 6 | `config/pacod-id.toml` | A `service` client `pacod-agg-service` (`product = "agg"`, `audience = "pacod-aggregator"`, `secret_env = "AGG_ID_CLIENT_SECRET"`); a `confidential` client `pacod-agg-ui` (`redirect_uris = ["${AGG_CONSOLE_URL}/auth/callback"]`, `post_logout_redirect_uris`, `initiate_login_uri`, `audience = "pacod-aggregator"`); `agg.admin` in `accounts_managed_by` |
 | 7 | `scripts/render-env.sh` | `AGG_CONSOLE_URL` and `AGG_SITE` (`url agg`), `AGG_API_ORIGIN` and `AGG_API_SITE` (`url agg-api`), `AGG_CADDY_LOG_FORMAT`; `agg` and `agg-api` in both lists of taken subdomains; `agg.admin` in `PID_BOOTSTRAP_ADMIN_ROLES`; `AGG_CONSOLE_URL`, `AGG_ID_CLIENT_SECRET` and `AGG_UI_CLIENT_SECRET` in `.state/env/id.container.env`, where pacod-id reads them; write `.state/env/agg.env` |
 | 8 | `scripts/init-secrets.sh` | `need AGG_DB_PASSWORD hex 24`, and `hex 32` for `AGG_ID_CLIENT_SECRET`, `AGG_UI_CLIENT_SECRET`, `AGG_UI_SESSION_SECRET`, `AGG_INTERNAL_TOKEN` |
@@ -31,7 +31,7 @@ The app file has no `ports:` and carries its own builds, so `overlays/agg.yml` n
 
 `scripts/bootstrap.py` makes two credentials: `AGG_GW_KEY` (`gw.SERVICES`), the aggregator's key at
 the gateway, and `PGW_AGGREGATOR_TOKEN`. An administrator still confirms the pages and names the
-extraction model, in the console's Settings or as `AGG_LLM_MODEL` in `demo.env`. Until then the
+extraction model, in the console's Settings or as `AGG_GW_MODEL` in `demo.env`. Until then the
 catalogue holds what the lists say.
 
 ## 2. pacod-gw: the gateway takes the catalogue
@@ -44,12 +44,12 @@ catalogue holds what the lists say.
 
 The gateway reads the whole catalogue once a day. `?vendor=` and the ETag are there for consumers that want less: it uses neither yet.
 
-The aggregator can in turn use the gateway: `AGG_LLM_URL` at the gateway's OpenAI-compatible
-endpoint and `AGG_LLM_KEY` a gateway key. The extraction model is then a model of that gateway's,
-named in Settings or as `AGG_LLM_MODEL`. This is one choice of endpoint, not a dependency: pointed at
-a provider instead, the aggregator runs without a gateway, in the full stack too
-([runbook.md](runbook.md) section 13). The two do not depend on each other to start: a gateway keeps
-the model data it last read, and pages wait for the model.
+The aggregator can in turn use the gateway: gateway mode on **Settings**, with `AGG_GW_URL` at the
+gateway's OpenAI-compatible endpoint and `AGG_GW_KEY` a gateway key. The extraction model is then a
+model of that gateway's, named in Settings or as `AGG_GW_MODEL`. This is one choice of endpoint, not
+a dependency: in standalone mode the aggregator calls a provider and runs without a gateway, in the
+full stack too ([runbook.md](runbook.md) section 13). The two do not depend on each other to start: a
+gateway keeps the model data it last read, and pages wait for the model.
 
 ## 3. pacod-id
 

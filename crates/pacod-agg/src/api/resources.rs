@@ -229,21 +229,40 @@ async fn check(State(st): State<AppState>, _: Manager, Path(id): Path<String>) -
 
 // --- settings -----------------------------------------------------------------------------------
 
-/// The settings, and the version to send back with a change.
+/// The settings, and the version to send back with a change. It says whether each mode has an
+/// endpoint and never what it is: this is shown to anyone who may read the console.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct SettingsView {
+    /// `mode` is here the mode in use, also while none was chosen, so that a form shows it and
+    /// saving that form as it stands changes nothing.
     #[serde(flatten)]
     pub settings: Settings,
     pub version: i32,
-    /// The operator's `AGG_LLM_MODEL`, used while `extraction_model` is empty. It is set in the
-    /// environment and cannot be changed here.
+    /// The operator's `AGG_LLM_MODEL`, used in standalone mode while `extraction_model` is empty.
+    /// It is set in the environment and cannot be changed here.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extraction_model_default: Option<String>,
+    /// The operator's `AGG_GW_MODEL`, used in gateway mode while `gateway_model` is empty. It is set
+    /// in the environment and cannot be changed here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway_model_default: Option<String>,
+    /// Whether the environment names an endpoint for standalone mode (`AGG_LLM_URL`).
+    pub standalone_configured: bool,
+    /// Whether the environment names an endpoint for gateway mode (`AGG_GW_URL`).
+    pub gateway_configured: bool,
 }
 
 impl SettingsView {
-    fn of(st: &AppState, settings: Settings, version: i32) -> Self {
-        Self { settings, version, extraction_model_default: st.config.llm_model.clone() }
+    fn of(st: &AppState, mut settings: Settings, version: i32) -> Self {
+        settings.mode = Some(st.config.mode(&settings));
+        Self {
+            settings,
+            version,
+            extraction_model_default: st.config.llm_model.clone(),
+            gateway_model_default: st.config.gateway_model.clone(),
+            standalone_configured: st.config.llm.is_some(),
+            gateway_configured: st.config.gateway.is_some(),
+        }
     }
 }
 
@@ -268,7 +287,9 @@ async fn settings_save(
 ) -> ApiResult<Json<SettingsView>> {
     let mut settings = input.settings;
     settings.check().map_err(ApiError::invalid)?;
-    settings.extraction_model = settings.extraction_model.map(|m| m.trim().to_owned()).filter(|m| !m.is_empty());
+    let name = |m: Option<String>| m.map(|m| m.trim().to_owned()).filter(|m| !m.is_empty());
+    settings.extraction_model = name(settings.extraction_model);
+    settings.gateway_model = name(settings.gateway_model);
     let doc = serde_json::to_value(&settings).map_err(|e| ApiError::invalid(e.to_string()))?;
     let version = st
         .store

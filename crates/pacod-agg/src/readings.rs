@@ -2,9 +2,10 @@
 //! server has its text read by the extraction model and keeps what the page says. Once every page
 //! of a vendor in the run was checked, the vendor settles into the catalogue.
 //!
-//! The extraction model is reached through an OpenAI-compatible endpoint (`AGG_LLM_URL`): a
-//! provider's own, or a pacod-gw with a key of its own, where its cost is accounted like any other
-//! call. This is the only call of a model anywhere in the aggregator.
+//! The extraction model is reached through an OpenAI-compatible endpoint, by the mode in use: a
+//! provider's own (`AGG_LLM_URL`), or a pacod-gw (`AGG_GW_URL`) with a key of its own, where its
+//! cost is accounted like any other call. This is the only call of a model anywhere in the
+//! aggregator.
 //!
 //! Moved from pacod-gw (commit 50fe4b7, `crates/pacod-gw-core/src/mgmt/readings.rs`).
 
@@ -91,8 +92,8 @@ pub async fn reading(st: &AppState, run_id: &str, reading: &PageReading) -> ApiR
             Some(_) if st.config.extraction_model(&settings).is_none() => {
                 (rec.outcome, rec.message) = ("not_read".into(), "no extraction model is set".into());
             }
-            Some(_) if st.config.llm.is_none() => {
-                (rec.outcome, rec.message) = ("not_read".into(), "AGG_LLM_URL is not set".into());
+            Some(_) if st.config.link(&settings).is_none() => {
+                (rec.outcome, rec.message) = ("not_read".into(), no_endpoint(st, &settings));
             }
             Some(text) => match extract_page(st, &settings, &run, &page, text).await {
                 Ok(ex) => {
@@ -307,8 +308,14 @@ fn extraction_prompt(vendor: &str, known: &str, text: &str, (part, parts): (usiz
     )
 }
 
+/// What a page says when the mode in use has no endpoint.
+fn no_endpoint(st: &AppState, settings: &Settings) -> String {
+    format!("{} is not set", st.config.mode(settings).url_variable())
+}
+
 /// One call of the extraction model, on its OpenAI-compatible endpoint. The key goes to the
-/// address the operator named, and nowhere else.
+/// address the operator named with it, and nowhere else. All of a page is read with one snapshot of
+/// the settings, so a switch of the mode during a run applies from the next page.
 async fn call_extraction(
     st: &AppState,
     settings: &Settings,
@@ -317,7 +324,7 @@ async fn call_extraction(
     text: &str,
     part: (usize, usize),
 ) -> Result<Value, String> {
-    let link = st.config.llm.as_ref().ok_or("AGG_LLM_URL is not set")?;
+    let link = st.config.link(settings).ok_or_else(|| no_endpoint(st, settings))?;
     let model = st.config.extraction_model(settings).ok_or("no extraction model is set")?;
     let mut body = json!({
         "model": model,

@@ -7,12 +7,18 @@
 	let { data, form }: PageProps = $props();
 	const manage = $derived(may(data.principal?.permissions ?? [], 'agg.data.manage'));
 	const settings = $derived(data.settings);
+	const gatewayInUse = $derived(settings.mode === 'gateway');
+	// What the saved mode reads with: the form may show another mode that is not saved yet.
 	const modelInUse = $derived.by(() => {
-		if (settings.extraction_model) return `In use: ${settings.extraction_model}, named here.`;
-		if (settings.extraction_model_default) {
-			return `In use: ${settings.extraction_model_default}, from AGG_LLM_MODEL. A name saved here takes its place.`;
-		}
-		return 'Pages are not read until a model is named, here or as AGG_LLM_MODEL.';
+		const named = gatewayInUse ? settings.gateway_model : settings.extraction_model;
+		const fallback = gatewayInUse
+			? settings.gateway_model_default
+			: settings.extraction_model_default;
+		const variable = gatewayInUse ? 'AGG_GW_MODEL' : 'AGG_LLM_MODEL';
+		if (named) return `In use: ${named}, named here.`;
+		if (fallback)
+			return `In use: ${fallback}, from ${variable}. A name saved here takes its place.`;
+		return `Pages are not read until a model is named for this mode, here or as ${variable}.`;
 	});
 </script>
 
@@ -44,15 +50,42 @@
 		<legend>Extraction</legend>
 		<p class="muted small">
 			The one model the aggregator calls: it reads the pages. The scan and settling into the
-			catalogue use none. Its endpoint and key are set in the environment.
+			catalogue use none. The two endpoints and their keys are set in the environment. Here you
+			choose between them, and the choice applies from the next page read, without a restart.
+		</p>
+		<label for="mode">How the model is reached</label>
+		<!-- A select, not radios that are disabled when not set up: a disabled input is not posted,
+		     so saving the page for another reason could change the mode. -->
+		<select id="mode" name="mode" value={settings.mode}>
+			<option value="standalone">
+				Standalone: calls a provider's endpoint itself{settings.standalone_configured
+					? ''
+					: ' (not set up: AGG_LLM_URL is empty)'}
+			</option>
+			<option value="gateway">
+				Gateway: calls through pacod-gw{settings.gateway_configured
+					? ''
+					: ' (not set up: AGG_GW_URL is empty)'}
+			</option>
+		</select>
+		<p class="muted small">
+			A gateway accounts each call, and its key can carry a spending cap. Neither applies in
+			standalone mode, so set a limit at the provider.
 		</p>
 		<p class="muted small">{modelInUse}</p>
-		<label for="extraction_model">Model, by the name its endpoint takes</label>
+		<label for="extraction_model">Model in standalone mode, by the name its endpoint takes</label>
 		<input
 			id="extraction_model"
 			name="extraction_model"
 			value={settings.extraction_model ?? ''}
 			placeholder={settings.extraction_model_default ?? ''}
+		/>
+		<label for="gateway_model">Model in gateway mode, by the name the gateway takes</label>
+		<input
+			id="gateway_model"
+			name="gateway_model"
+			value={settings.gateway_model ?? ''}
+			placeholder={settings.gateway_model_default ?? ''}
 		/>
 		<label for="extraction_context_window">How much the model takes in at once, in tokens</label>
 		<input

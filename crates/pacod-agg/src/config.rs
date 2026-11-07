@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 
 use anyhow::{Context, bail, ensure};
 
-use crate::settings::Settings;
+use crate::settings::{Mode, Settings};
 
 /// A shorter development token is refused.
 const MIN_DEV_TOKEN: usize = 32;
@@ -36,6 +36,9 @@ pub const VARIABLES: &[&str] = &[
     "AGG_LLM_KEY",
     "AGG_LLM_MODEL",
     "AGG_LLM_MAX_TOKENS_FIELD",
+    "AGG_GW_URL",
+    "AGG_GW_KEY",
+    "AGG_GW_MODEL",
     "AGG_EGRESS_ALLOW_PRIVATE",
     "AGG_LOG_FORMAT",
 ];
@@ -127,7 +130,8 @@ const DEFAULT_LIMIT_FIELD: &str = "max_tokens";
 
 /// Where the extraction model is reached: an OpenAI-compatible endpoint, a provider's own or a
 /// gateway of pacod-gw, with a key of its own. The address and the key are the operator's, here
-/// alone, because the key goes to that address with every call.
+/// alone, because the key goes to that address with every call. They stay one value for the same
+/// reason: the console chooses a link, so it can never put a key and another address together.
 #[derive(Clone)]
 pub struct LlmLink {
     pub url: String,
@@ -156,10 +160,16 @@ pub struct Config {
     pub public_url: Option<String>,
     /// What the scraper presents on the internal API. Unset: the internal API answers no one.
     pub internal_token: Option<String>,
+    /// The endpoint of standalone mode.
     pub llm: Option<LlmLink>,
     /// The operator's model, used while the console names none. Kept apart from `llm`, so that an
     /// address left empty to pause reading does not also lose the name.
     pub llm_model: Option<String>,
+    /// The endpoint of gateway mode.
+    pub gateway: Option<LlmLink>,
+    /// The operator's model at the gateway, kept apart as `llm_model` is. A gateway's names are not
+    /// a provider's, so the two modes never share one.
+    pub gateway_model: Option<String>,
     /// Hosts and ranges that are not public and that pages may still be read from.
     pub egress_allow_private: Vec<String>,
 }
@@ -218,6 +228,12 @@ impl Config {
                 Some(LlmLink { url: check_url("AGG_LLM_URL", &url)?, key: secret(env, "AGG_LLM_KEY")?, limit_field })
             }
         };
+        // Always the usual name: a gateway translates it for each provider, so the name a provider
+        // asks for in AGG_LLM_MAX_TOKENS_FIELD does not apply here.
+        let gateway = match set(env, "AGG_GW_URL") {
+            None => None,
+            Some(url) => Some(LlmLink::new(check_url("AGG_GW_URL", &url)?, secret(env, "AGG_GW_KEY")?)),
+        };
         let metrics_listen = match set(env, "AGG_METRICS_LISTEN").as_deref() {
             Some("off") => None,
             Some(v) => {
@@ -240,6 +256,8 @@ impl Config {
             internal_token,
             llm,
             llm_model: set(env, "AGG_LLM_MODEL"),
+            gateway,
+            gateway_model: set(env, "AGG_GW_MODEL"),
             egress_allow_private: set(env, "AGG_EGRESS_ALLOW_PRIVATE")
                 .map(|v| v.split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect())
                 .unwrap_or_default(),
@@ -248,14 +266,38 @@ impl Config {
 }
 
 impl Config {
-    /// The model that reads pages: the one named in the console, else the operator's.
+    /// The mode in use: the one chosen in the console. Until one is, an installation that set only
+    /// the gateway uses it, and any other is standalone, so that one with only `AGG_LLM_URL` reads
+    /// on as it did before there were modes, without anyone opening the settings.
+    pub fn mode(&self, settings: &Settings) -> Mode {
+        settings.mode.unwrap_or(if self.llm.is_none() && self.gateway.is_some() {
+            Mode::Gateway
+        } else {
+            Mode::Standalone
+        })
+    }
+
+    /// The endpoint of the mode in use, and never the other's: falling back would change who is
+    /// paid and who sees the pages without anyone having chosen that.
+    pub fn link(&self, settings: &Settings) -> Option<&LlmLink> {
+        match self.mode(settings) {
+            Mode::Standalone => self.llm.as_ref(),
+            Mode::Gateway => self.gateway.as_ref(),
+        }
+    }
+
+    /// The model that reads pages: the one named in the console for the mode in use, else the
+    /// operator's for that mode.
     pub fn extraction_model<'a>(&'a self, settings: &'a Settings) -> Option<&'a str> {
-        settings.extraction_model.as_deref().or(self.llm_model.as_deref())
+        match self.mode(settings) {
+            Mode::Standalone => settings.extraction_model.as_deref().or(self.llm_model.as_deref()),
+            Mode::Gateway => settings.gateway_model.as_deref().or(self.gateway_model.as_deref()),
+        }
     }
 
     /// Whether pages can be read: a model is named and there is an endpoint to call it on.
     pub fn can_read(&self, settings: &Settings) -> bool {
-        self.llm.is_some() && self.extraction_model(settings).is_some()
+        self.link(settings).is_some() && self.extraction_model(settings).is_some()
     }
 }
 
@@ -301,6 +343,8 @@ mod tests {
             ("AGG_LLM_URL", "ftp://example.com"),
             ("AGG_LLM_URL", "https://user:secret@example.com"),
             ("AGG_LLM_MAX_TOKENS_FIELD", "max_output_tokens"),
+            ("AGG_GW_URL", "ftp://example.com"),
+            ("AGG_GW_URL", "https://user:secret@example.com"),
         ] {
             assert!(with(&[bad]).is_err(), "{bad:?}");
         }
@@ -331,6 +375,85 @@ mod tests {
         assert_eq!(with(&[url]).unwrap().llm.unwrap().limit_field, "max_tokens");
         let named = with(&[url, ("AGG_LLM_MAX_TOKENS_FIELD", "max_completion_tokens")]).unwrap();
         assert_eq!(named.llm.unwrap().limit_field, "max_completion_tokens");
+    }
+
+    const DIRECT: (&str, &str) = ("AGG_LLM_URL", "https://api.example.com/v1");
+    const GATEWAY: (&str, &str) = ("AGG_GW_URL", "http://pacod-gw:8080/v1/");
+
+    #[test]
+    fn the_gateway_has_its_own_address_and_key() {
+        let c = with(&[
+            DIRECT,
+            ("AGG_LLM_KEY", "the-providers-key"),
+            GATEWAY,
+            ("AGG_GW_KEY", "the-gateways-key"),
+            ("AGG_LLM_MAX_TOKENS_FIELD", "max_completion_tokens"),
+        ])
+        .unwrap();
+        let (direct, gateway) = (c.llm.unwrap(), c.gateway.unwrap());
+        assert_eq!(direct.url, "https://api.example.com/v1");
+        assert_eq!(direct.key.as_deref(), Some("the-providers-key"));
+        assert_eq!(gateway.url, "http://pacod-gw:8080/v1");
+        assert_eq!(gateway.key.as_deref(), Some("the-gateways-key"));
+        // The gateway translates the limit; the name a provider asks for is not for it.
+        assert_eq!((direct.limit_field, gateway.limit_field), ("max_completion_tokens", "max_tokens"));
+    }
+
+    #[test]
+    fn the_gateways_key_can_come_from_a_file() {
+        let dir = std::env::temp_dir().join(format!("pagg-gw-key-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("key");
+        std::fs::write(&file, "the-gateways-key\n").unwrap();
+        let path = file.display().to_string();
+        let keyed = [("AGG_GW_KEY_FILE", path.as_str())];
+        let c = config(&[BASE, &[GATEWAY], &keyed].concat()).unwrap();
+        assert_eq!(c.gateway.unwrap().key.as_deref(), Some("the-gateways-key"));
+        assert!(config(&[BASE, &[GATEWAY, ("AGG_GW_KEY", "x")], &keyed].concat()).is_err(), "both are refused");
+    }
+
+    #[test]
+    fn the_mode_is_the_consoles_and_else_follows_what_is_set() {
+        let chosen = |mode| Settings { mode: Some(mode), ..Settings::default() };
+        let none = Settings::default();
+        // Until the console chooses: an endpoint of its own wins, as it did in the full stack.
+        assert_eq!(with(&[]).unwrap().mode(&none), Mode::Standalone);
+        assert_eq!(with(&[DIRECT]).unwrap().mode(&none), Mode::Standalone);
+        assert_eq!(with(&[GATEWAY]).unwrap().mode(&none), Mode::Gateway);
+        assert_eq!(with(&[DIRECT, GATEWAY]).unwrap().mode(&none), Mode::Standalone);
+        // The console's choice stands, whatever is set.
+        let c = with(&[DIRECT, GATEWAY]).unwrap();
+        assert_eq!(c.mode(&chosen(Mode::Gateway)), Mode::Gateway);
+        assert_eq!(with(&[GATEWAY]).unwrap().mode(&chosen(Mode::Standalone)), Mode::Standalone);
+    }
+
+    #[test]
+    fn a_mode_without_its_endpoint_does_not_use_the_other() {
+        let settings = Settings { mode: Some(Mode::Gateway), gateway_model: Some("m".into()), ..Settings::default() };
+        let c = with(&[DIRECT, ("AGG_LLM_MODEL", "from-env")]).unwrap();
+        assert!(c.link(&settings).is_none());
+        assert!(!c.can_read(&settings));
+        let settings = Settings { mode: Some(Mode::Standalone), ..Settings::default() };
+        let c = with(&[GATEWAY, ("AGG_GW_MODEL", "from-env")]).unwrap();
+        assert!(c.link(&settings).is_none());
+        assert_eq!(c.extraction_model(&settings), None);
+        assert!(!c.can_read(&settings));
+    }
+
+    #[test]
+    fn each_mode_has_its_own_model() {
+        let c =
+            with(&[DIRECT, GATEWAY, ("AGG_LLM_MODEL", "direct-env"), ("AGG_GW_MODEL", "vendor/gateway-env")]).unwrap();
+        let in_mode = |mode, s: Settings| Settings { mode: Some(mode), ..s };
+        let named = || Settings {
+            extraction_model: Some("direct-console".into()),
+            gateway_model: Some("vendor/gateway-console".into()),
+            ..Settings::default()
+        };
+        assert_eq!(c.extraction_model(&in_mode(Mode::Standalone, Settings::default())), Some("direct-env"));
+        assert_eq!(c.extraction_model(&in_mode(Mode::Gateway, Settings::default())), Some("vendor/gateway-env"));
+        assert_eq!(c.extraction_model(&in_mode(Mode::Standalone, named())), Some("direct-console"));
+        assert_eq!(c.extraction_model(&in_mode(Mode::Gateway, named())), Some("vendor/gateway-console"));
     }
 
     #[test]

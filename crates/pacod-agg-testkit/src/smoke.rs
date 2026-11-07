@@ -267,8 +267,10 @@ async fn console(s: &Smoke) -> anyhow::Result<()> {
     // The settings form holds every setting: saved as it stands, nothing may change.
     let (_, before) = s.api("GET", "/settings", None).await?;
     let page = http.get(format!("{base}/settings")).header("cookie", &session).send().await?.text().await?;
-    let named = before["extraction_model_default"].as_str().is_none_or(|model| page.contains(model));
-    ensure!(named, "the settings page does not say which model is in use");
+    let names = |field: &str| before[field].as_str().is_none_or(|model| page.contains(model));
+    ensure!(names("extraction_model_default"), "the settings page does not say which model is in use");
+    ensure!(names("gateway_model_default"), "the settings page does not name the gateway's model");
+    let mode = before["mode"].as_str().context("the settings do not say which mode is in use")?.to_owned();
     let joined = |v: &Value| {
         v.as_array().map_or(String::new(), |list| list.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "))
     };
@@ -278,6 +280,7 @@ async fn console(s: &Smoke) -> anyhow::Result<()> {
         ("schedule".to_owned(), shown(&before["schedule"])),
         ("scan_schedule".to_owned(), shown(&before["scan_schedule"])),
         ("time_zone".to_owned(), shown(&before["time_zone"])),
+        ("mode".to_owned(), mode.clone()),
         ("extraction_context_window".to_owned(), shown(&before["extraction_context_window"])),
         ("max_extractions_per_run".to_owned(), shown(&before["max_extractions_per_run"])),
         ("max_pages_per_vendor".to_owned(), shown(&before["scan"]["max_pages_per_vendor"])),
@@ -288,19 +291,47 @@ async fn console(s: &Smoke) -> anyhow::Result<()> {
     if before["enabled"] == true {
         fields.push(("enabled".to_owned(), "on".to_owned()));
     }
-    if let Some(model) = before["extraction_model"].as_str() {
-        fields.push(("extraction_model".to_owned(), model.to_owned()));
+    for model in ["extraction_model", "gateway_model"] {
+        if let Some(name) = before[model].as_str() {
+            fields.push((model.to_owned(), name.to_owned()));
+        }
     }
-    let r = post("/settings?/save", base).form(&fields).send().await?;
-    let status = r.status();
-    let body = r.text().await?;
-    ensure!(status == 200 && body.contains("The settings are saved"), "saving the form answered {status}");
+    let save = async |fields: &[(String, String)]| -> anyhow::Result<()> {
+        let r = post("/settings?/save", base).form(fields).send().await?;
+        let status = r.status();
+        let body = r.text().await?;
+        ensure!(status == 200 && body.contains("The settings are saved"), "saving the form answered {status}");
+        Ok(())
+    };
+    save(&fields).await?;
     let (_, mut after) = s.api("GET", "/settings", None).await?;
     let version = after["version"].as_i64().unwrap_or_default();
     ensure!(version == before["version"].as_i64().unwrap_or_default() + 1, "the form changed no version: {after}");
     after["version"] = before["version"].clone();
     ensure!(after == before, "the form changed the settings:\n{before}\n{after}");
     step("the settings form says what the server holds", "");
+
+    // The switch itself: the form changes the mode, needs no restart, and the choice can be undone.
+    // The gateway's model goes along, and leaves again, because the development file names none here.
+    let other = if mode == "gateway" { "standalone" } else { "gateway" };
+    for (next, version, model) in [(other, version, "mock/named-here"), (mode.as_str(), version + 1, "")] {
+        let kept = fields.iter().filter(|(name, _)| !["mode", "version", "gateway_model"].contains(&name.as_str()));
+        let mut sent: Vec<(String, String)> = kept.cloned().collect();
+        sent.extend([
+            ("mode".to_owned(), next.to_owned()),
+            ("version".to_owned(), version.to_string()),
+            ("gateway_model".to_owned(), model.to_owned()),
+        ]);
+        save(&sent).await?;
+        let (_, now) = s.api("GET", "/settings", None).await?;
+        let held = now["gateway_model"].as_str().unwrap_or_default();
+        ensure!(now["mode"] == next && held == model, "the form sent {next} and {model:?}, and the server holds {now}");
+        // As the server renders it: a page that showed another mode would change it when saved.
+        let page = http.get(format!("{base}/settings")).header("cookie", &session).send().await?.text().await?;
+        let selected = format!("<option value=\"{next}\" selected");
+        ensure!(page.contains(&selected), "the settings page does not show {next}, the mode in use");
+    }
+    step("the settings form switches between the modes", "");
     Ok(())
 }
 
@@ -398,6 +429,14 @@ async fn walk(s: &Smoke, vendor: &str, mut settings: Value) -> anyhow::Result<()
     ensure!(unchanged.status() == 304, "asked with its tag, the catalogue answered {}", unchanged.status());
     step("a catalogue that did not change is not sent again", "");
 
+    // The first reading went to AGG_LLM_URL. This one goes through the gateway, so that the
+    // variables of both modes are proved on a running server, with no restart in between.
+    let (_, mut now) = s.api("GET", "/settings", None).await?;
+    ensure!(now["gateway_configured"] == true, "the development stack names no gateway: {now}");
+    now["mode"] = json!("gateway");
+    let (st, v) = s.api("PUT", "/settings", Some(now)).await?;
+    ensure!(st == 200, "choosing gateway mode answered {st}: {v}");
+
     let (_, before) = s.api("GET", &format!("/pages/{pricing}"), None).await?;
     let since = before["state"]["last_read_at"].clone();
     s.variant(2).await?;
@@ -416,7 +455,7 @@ async fn walk(s: &Smoke, vendor: &str, mut settings: Value) -> anyhow::Result<()
     ensure!(input == Some(2.4), "the new price did not apply: {input:?}");
     let new = index.find(vendor, "tracked-new").one().context("tracked-new is missing")?;
     ensure!(new.api_id_confirmed, "the page states the new model's id");
-    step("a changed page changes the catalogue", "a new price, a new model");
+    step("a changed page changes the catalogue", "a new price, a new model, in gateway mode");
 
     let metrics = s.http.get(&s.o.metrics).send().await?.error_for_status()?.text().await?;
     for series in ["agg_jobs_enabled", "agg_scraper_seen_age_seconds", "agg_models"] {

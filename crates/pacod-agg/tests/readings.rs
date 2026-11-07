@@ -18,6 +18,7 @@ use pacod_agg_catalog::{Catalog, Format, parse};
 use serde_json::{Value, json};
 
 const KEY: &str = "a-key-of-the-gateway";
+const PROVIDER_KEY: &str = "a-key-of-a-provider";
 
 /// The extraction model's endpoint: answers in the order given, and keeps what it was sent.
 #[derive(Clone, Default)]
@@ -608,6 +609,105 @@ async fn the_environment_names_the_model_until_the_console_does() {
     let calls = llm.calls.lock().unwrap();
     let models: Vec<&str> = calls.iter().map(|(body, _)| body["model"].as_str().unwrap()).collect();
     assert_eq!(models, ["from-env", "reader", "from-env"]);
+}
+
+/// Changes one setting, as saving the settings page does.
+async fn save_setting(s: &Server, name: &str, value: Value) {
+    let (_, mut settings) = s.api("GET", "/settings", None).await;
+    settings[name] = value;
+    let (st, v) = s.api("PUT", "/settings", Some(settings)).await;
+    assert_eq!(st, 200, "{v}");
+}
+
+/// What an endpoint was sent: the model and the credential of each call.
+fn seen(llm: &Llm) -> Vec<(String, String)> {
+    let calls = llm.calls.lock().unwrap();
+    calls.iter().map(|(body, auth)| (body["model"].as_str().unwrap().to_owned(), auth.clone())).collect()
+}
+
+#[tokio::test]
+async fn a_switch_applies_at_the_next_reading_and_each_key_stays_with_its_address() {
+    let (direct, gateway) = (Llm::default(), Llm::default());
+    let (direct_url, gateway_url) = (direct.url().await, gateway.url().await);
+    let s = Server::start(|c| {
+        c.llm = Some(LlmLink::new(direct_url, Some(PROVIDER_KEY.into())));
+        c.gateway = Some(LlmLink::new(gateway_url, Some(KEY.into())));
+    })
+    .await;
+    s.only_vendor("openai").await;
+    save_setting(&s, "extraction_model", json!("reader")).await;
+    save_setting(&s, "gateway_model", json!("vendor/reader")).await;
+    let first = s.add_page("openai", "https://openai.example/pricing").await;
+    let second = s.add_page("openai", "https://openai.example/models").await;
+
+    // Both are set and none is chosen: an endpoint of its own wins, as the full stack had it.
+    let id = run(&s).await;
+    read(&s, &id, changed(&first, "h1")).await;
+    // Within the run, without a restart, and with no change of the model: that is the switch.
+    save_setting(&s, "mode", json!("gateway")).await;
+    read(&s, &id, changed(&second, "h2")).await;
+    finish(&s, &id).await;
+
+    save_setting(&s, "mode", json!("standalone")).await;
+    let id = check_again(&s).await;
+    read(&s, &id, changed(&first, "h3")).await;
+
+    let (reader, routed) = (String::from("reader"), String::from("vendor/reader"));
+    let (provider, its_gateway) = (format!("Bearer {PROVIDER_KEY}"), format!("Bearer {KEY}"));
+    assert_eq!(seen(&direct), [(reader.clone(), provider.clone()), (reader, provider)]);
+    assert_eq!(seen(&gateway), [(routed, its_gateway)]);
+}
+
+#[tokio::test]
+async fn a_mode_without_its_endpoint_waits_and_the_other_is_not_called() {
+    let (s, llm) = server(|_| {}).await;
+    save_setting(&s, "gateway_model", json!("vendor/reader")).await;
+    save_setting(&s, "mode", json!("gateway")).await;
+    let page = s.add_page("openai", "https://openai.example/pricing").await;
+
+    let id = run(&s).await;
+    let r = read(&s, &id, changed(&page, "h1")).await;
+    assert_eq!((r["outcome"].as_str(), r["message"].as_str()), (Some("not_read"), Some("AGG_GW_URL is not set")));
+    assert_eq!(llm.calls(), 0, "standalone's endpoint is set, and it is not the one chosen");
+
+    let status = s.api("GET", "/status", None).await.1;
+    assert_eq!(status["extraction"], false, "{status}");
+    let problems = status["problems"].to_string();
+    assert!(problems.contains("AGG_GW_URL") && problems.contains("gateway mode"), "{problems}");
+}
+
+#[tokio::test]
+async fn an_installation_with_only_a_gateway_reads_without_anyone_choosing() {
+    let llm = Llm::default();
+    let url = llm.url().await;
+    let s = Server::start(|c| {
+        c.gateway = Some(LlmLink::new(url, Some(KEY.into())));
+        c.gateway_model = Some("vendor/from-env".into());
+    })
+    .await;
+    s.only_vendor("openai").await;
+    let page = s.add_page("openai", "https://openai.example/pricing").await;
+    assert_eq!(s.api("GET", "/status", None).await.1["extraction"], true);
+
+    let id = run(&s).await;
+    read(&s, &id, changed(&page, "h1")).await;
+    assert_eq!(seen(&llm), [(String::from("vendor/from-env"), format!("Bearer {KEY}"))]);
+    assert_eq!(llm.calls.lock().unwrap()[0].0["max_tokens"], 16_000, "the gateway translates the limit");
+}
+
+#[tokio::test]
+async fn a_mode_without_a_model_says_which_variable_would_name_one() {
+    let (s, llm) = server(|c| c.gateway = c.llm.clone()).await;
+    save_setting(&s, "mode", json!("gateway")).await;
+    let page = s.add_page("openai", "https://openai.example/pricing").await;
+
+    let id = run(&s).await;
+    let r = read(&s, &id, changed(&page, "h1")).await;
+    // The standalone model is named, and it is not the gateway's to use.
+    assert_eq!((r["outcome"].as_str(), r["message"].as_str()), (Some("not_read"), Some("no extraction model is set")));
+    assert_eq!(llm.calls(), 0);
+    let problems = s.api("GET", "/status", None).await.1["problems"].to_string();
+    assert!(problems.contains("AGG_GW_MODEL"), "{problems}");
 }
 
 #[tokio::test]

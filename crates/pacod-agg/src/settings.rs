@@ -1,13 +1,51 @@
-//! What an administrator sets in the console: when pages are checked and scanned for, and the
-//! model that reads them. The extraction model's address and key are the operator's, in the
-//! environment (`AGG_LLM_URL`, `AGG_LLM_KEY`), and never here: this document is shown to anyone who
-//! may read the console, and an address that could be edited could send the key elsewhere. The
-//! operator may name a model there too (`AGG_LLM_MODEL`); one named here takes its place.
+//! What an administrator sets in the console: when pages are checked and scanned for, and how the
+//! model that reads them is reached. The extraction model's addresses and keys are the operator's,
+//! in the environment (`AGG_LLM_*` and `AGG_GW_*`), and never here: this document is shown to anyone
+//! who may read the console, and an address that could be edited could send a key elsewhere. The
+//! console only picks one of the two endpoints the operator paired with their keys, by `Mode`. The
+//! operator may name each mode's model there too (`AGG_LLM_MODEL`, `AGG_GW_MODEL`); one named here
+//! takes its place.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::schedule::parse_cron;
+
+/// How the extraction model is reached. This is not `docker-compose.standalone.yml`, which is about
+/// where the shared components come from: either mode runs on either stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// The aggregator calls a provider's endpoint itself (`AGG_LLM_URL`).
+    Standalone,
+    /// The aggregator calls through a pacod-gw (`AGG_GW_URL`), which accounts each call.
+    Gateway,
+}
+
+impl Mode {
+    /// The variable that holds this mode's endpoint, for what the console and the logs say.
+    pub fn url_variable(self) -> &'static str {
+        match self {
+            Mode::Standalone => "AGG_LLM_URL",
+            Mode::Gateway => "AGG_GW_URL",
+        }
+    }
+
+    /// The variable that names this mode's model.
+    pub fn model_variable(self) -> &'static str {
+        match self {
+            Mode::Standalone => "AGG_LLM_MODEL",
+            Mode::Gateway => "AGG_GW_MODEL",
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Standalone => "standalone",
+            Mode::Gateway => "gateway",
+        }
+    }
+}
 
 /// How the weekly scan looks for pages.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -45,11 +83,20 @@ pub struct Settings {
     pub scan_schedule: String,
     /// The IANA time zone the schedules are read in.
     pub time_zone: String,
-    /// The model that reads the pages, by the name its endpoint takes: a chat model with
-    /// structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until one of
-    /// the two names a model.
+    /// How the extraction model is reached. Empty: gateway where only `AGG_GW_URL` is set, otherwise
+    /// standalone. There is no falling back from one to the other: a mode without its endpoint waits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<Mode>,
+    /// The model that reads the pages in standalone mode, by the name its endpoint takes: a chat
+    /// model with structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until
+    /// one of the two names a model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extraction_model: Option<String>,
+    /// The model that reads the pages in gateway mode, by the name the gateway takes. The names
+    /// differ, which is why a switch of the mode needs no change here. Empty: the operator's
+    /// `AGG_GW_MODEL`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway_model: Option<String>,
     /// How much the extraction model takes in at once, for the size of the parts of a long page.
     pub extraction_context_window: u32,
     /// How many calls of the extraction model one run may make. A long page takes several.
@@ -71,7 +118,9 @@ impl Default for Settings {
             // Mondays, after the daily check.
             scan_schedule: "41 4 * * 1".into(),
             time_zone: "UTC".into(),
+            mode: None,
             extraction_model: None,
+            gateway_model: None,
             extraction_context_window: 200_000,
             max_extractions_per_run: 60,
             scan: ScanSettings::default(),
@@ -131,5 +180,15 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"enabled": false}"#).unwrap();
         assert!(!s.enabled);
         assert_eq!(s.schedule, Settings::default().schedule);
+        assert_eq!((s.mode, s.gateway_model), (None, None));
+    }
+
+    #[test]
+    fn a_mode_is_stored_by_its_name() {
+        let s: Settings = serde_json::from_str(r#"{"mode": "gateway"}"#).unwrap();
+        assert_eq!(s.mode, Some(Mode::Gateway));
+        let doc = serde_json::to_value(Settings { mode: Some(Mode::Standalone), ..Settings::default() }).unwrap();
+        assert_eq!(doc["mode"], "standalone");
+        assert!(serde_json::from_str::<Settings>(r#"{"mode": "elsewhere"}"#).is_err());
     }
 }

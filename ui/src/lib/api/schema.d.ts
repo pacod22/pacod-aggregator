@@ -712,7 +712,10 @@ export interface components {
             /** @default  */
             notes?: string;
         };
-        /** @description The settings, and the version to send back with a change. */
+        /**
+         * @description The settings, and the version to send back with a change. It says whether each mode has an
+         *     endpoint and never what it is: this is shown to anyone who may read the console.
+         */
         SettingsView: {
             /**
              * @description Whether the check and the scan run on their schedules.
@@ -737,11 +740,22 @@ export interface components {
              */
             time_zone?: string;
             /**
-             * @description The model that reads the pages, by the name its endpoint takes: a chat model with
-             *     structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until one of
-             *     the two names a model.
+             * @description How the extraction model is reached. Empty: gateway where only `AGG_GW_URL` is set, otherwise
+             *     standalone. There is no falling back from one to the other: a mode without its endpoint waits.
+             */
+            mode?: components["schemas"]["Mode"] | null;
+            /**
+             * @description The model that reads the pages in standalone mode, by the name its endpoint takes: a chat
+             *     model with structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until
+             *     one of the two names a model.
              */
             extraction_model?: string | null;
+            /**
+             * @description The model that reads the pages in gateway mode, by the name the gateway takes. The names
+             *     differ, which is why a switch of the mode needs no change here. Empty: the operator's
+             *     `AGG_GW_MODEL`.
+             */
+            gateway_model?: string | null;
             /**
              * Format: uint32
              * @description How much the extraction model takes in at once, for the size of the parts of a long page.
@@ -782,11 +796,25 @@ export interface components {
             /** Format: int32 */
             version: number;
             /**
-             * @description The operator's `AGG_LLM_MODEL`, used while `extraction_model` is empty. It is set in the
-             *     environment and cannot be changed here.
+             * @description The operator's `AGG_LLM_MODEL`, used in standalone mode while `extraction_model` is empty.
+             *     It is set in the environment and cannot be changed here.
              */
             extraction_model_default?: string | null;
+            /**
+             * @description The operator's `AGG_GW_MODEL`, used in gateway mode while `gateway_model` is empty. It is set
+             *     in the environment and cannot be changed here.
+             */
+            gateway_model_default?: string | null;
+            /** @description Whether the environment names an endpoint for standalone mode (`AGG_LLM_URL`). */
+            standalone_configured: boolean;
+            /** @description Whether the environment names an endpoint for gateway mode (`AGG_GW_URL`). */
+            gateway_configured: boolean;
         };
+        /**
+         * @description How the extraction model is reached. This is not `docker-compose.standalone.yml`, which is about
+         *     where the shared components come from: either mode runs on either stack.
+         */
+        Mode: "standalone" | "gateway";
         /** @description How the weekly scan looks for pages. */
         ScanSettings: {
             /**
@@ -839,11 +867,22 @@ export interface components {
              */
             time_zone?: string;
             /**
-             * @description The model that reads the pages, by the name its endpoint takes: a chat model with
-             *     structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until one of
-             *     the two names a model.
+             * @description How the extraction model is reached. Empty: gateway where only `AGG_GW_URL` is set, otherwise
+             *     standalone. There is no falling back from one to the other: a mode without its endpoint waits.
+             */
+            mode?: components["schemas"]["Mode"] | null;
+            /**
+             * @description The model that reads the pages in standalone mode, by the name its endpoint takes: a chat
+             *     model with structured output. Empty: the operator's `AGG_LLM_MODEL`. Pages are not read until
+             *     one of the two names a model.
              */
             extraction_model?: string | null;
+            /**
+             * @description The model that reads the pages in gateway mode, by the name the gateway takes. The names
+             *     differ, which is why a switch of the mode needs no change here. Empty: the operator's
+             *     `AGG_GW_MODEL`.
+             */
+            gateway_model?: string | null;
             /**
              * Format: uint32
              * @description How much the extraction model takes in at once, for the size of the parts of a long page.

@@ -4,6 +4,7 @@
 mod common;
 
 use common::{DEV, Server, database};
+use pacod_agg::config::LlmLink;
 use serde_json::json;
 
 #[tokio::test]
@@ -154,6 +155,50 @@ async fn the_operators_model_shows_and_is_not_stored() {
     let stored: serde_json::Value =
         sqlx::query_scalar("SELECT doc FROM settings").fetch_one(s.store.pool()).await.unwrap();
     assert!(stored.get("extraction_model_default").is_none(), "{stored}");
+}
+
+#[tokio::test]
+async fn the_view_says_which_modes_are_set_up_and_never_where_or_with_what_key() {
+    let s = Server::start(|c| {
+        c.llm = Some(LlmLink::new("https://provider.example/v1".into(), Some("the-providers-key".into())));
+        c.gateway = Some(LlmLink::new("http://gateway.example/v1".into(), Some("the-gateways-key".into())));
+        c.gateway_model = Some("vendor/from-env".into());
+    })
+    .await;
+    let (_, mut view) = s.api("GET", "/settings", None).await;
+    assert_eq!(view["mode"], "standalone", "the mode in use, though none was chosen: {view}");
+    assert_eq!((&view["standalone_configured"], &view["gateway_configured"]), (&json!(true), &json!(true)));
+    assert_eq!(view["gateway_model_default"], "vendor/from-env", "{view}");
+    let said = view.to_string();
+    for hidden in ["provider.example", "gateway.example", "the-providers-key", "the-gateways-key"] {
+        assert!(!said.contains(hidden), "{hidden} is in {said}");
+    }
+
+    // What is read from the environment stays there, whatever a client sends back.
+    view["mode"] = json!("gateway");
+    view["gateway_model"] = json!("  vendor/from-console  ");
+    view["gateway_model_default"] = json!("from-a-caller");
+    view["gateway_configured"] = json!(false);
+    let (st, saved) = s.api("PUT", "/settings", Some(view)).await;
+    assert_eq!(st, 200, "{saved}");
+    assert_eq!(saved["mode"], "gateway", "{saved}");
+    assert_eq!(saved["gateway_model"], "vendor/from-console", "{saved}");
+    assert_eq!(saved["gateway_model_default"], "vendor/from-env", "{saved}");
+    assert_eq!(saved["gateway_configured"], true, "{saved}");
+    let stored: serde_json::Value =
+        sqlx::query_scalar("SELECT doc FROM settings").fetch_one(s.store.pool()).await.unwrap();
+    assert_eq!(stored["mode"], "gateway", "{stored}");
+    for computed in ["gateway_model_default", "gateway_configured", "standalone_configured"] {
+        assert!(stored.get(computed).is_none(), "{computed} is in {stored}");
+    }
+}
+
+#[tokio::test]
+async fn a_mode_the_server_does_not_know_is_refused() {
+    let s = Server::start(|_| {}).await;
+    let (_, mut view) = s.api("GET", "/settings", None).await;
+    view["mode"] = json!("elsewhere");
+    assert_eq!(s.api("PUT", "/settings", Some(view)).await.0, 422);
 }
 
 #[tokio::test]

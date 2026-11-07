@@ -11,7 +11,7 @@ once a day.
 
 | Part | Service | What it does | What it holds |
 |---|---|---|---|
-| Server | `pacod-aggregator` | Keeps the data, decides what is due, calls the extraction model, settles what pages say into the catalogue, serves the APIs. | The database. `AGG_LLM_KEY`. |
+| Server | `pacod-aggregator` | Keeps the data, decides what is due, calls the extraction model, settles what pages say into the catalogue, serves the APIs. | The database. `AGG_LLM_KEY` and `AGG_GW_KEY`. |
 | Scraper | `agg-scraper` | Asks the server for work, renders pages, scans vendors' sites, reports what it found. Runs the egress proxy. | Nothing but `AGG_INTERNAL_TOKEN`. |
 | Browser | `agg-browser` | Headless Chromium, for the scraper. | Nothing: each page in a context that is thrown away. |
 | Console | `agg-console` | The administrators' pages. A server of its own: it signs people in and calls the admin API with their token. | A sealed session cookie, in the browser. |
@@ -20,9 +20,12 @@ The server is the only part with a database and the only one that calls a model.
 neither a key nor data, so a browser taken over by a page has nothing to reach for.
 
 Reading a page is the only call of a model. The scan and settling are rules, so that what a consumer
-relies on (section 5) holds whatever a model answers. The model is the one named in the console, or
-else the operator's `AGG_LLM_MODEL`. Its endpoint and key are the operator's alone, in the
-environment. pacod-gw is one choice of endpoint, not a dependency.
+relies on (section 5) holds whatever a model answers. The console chooses how the model is reached:
+standalone mode calls a provider's own endpoint, and gateway mode calls through a pacod-gw. Each mode
+has its own model, the one named in the console or else the operator's `AGG_LLM_MODEL` or
+`AGG_GW_MODEL`. The endpoints and keys are the operator's alone, in the environment. The console picks
+one of the two pairs, sees neither, and a mode without its endpoint waits instead of using the other.
+pacod-gw is one choice of endpoint, not a dependency.
 
 ```text
 vendor sites <-- proxy (in agg-scraper) <-- agg-browser
