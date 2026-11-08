@@ -163,6 +163,7 @@ them, nor the price history.
 | A page fails with `did not answer with a JSON object` | The model may have run out of room. See section 13. |
 | Pages are not read after a switch of the mode | **Overview** names what is missing. A mode never falls back to the other, so set its endpoint or model, or choose the other mode. |
 | **Settings** says the gateway's list could not be read | The message holds the reason. `AGG_GW_URL` must be the gateway's address with its `/v1`, and `AGG_GW_KEY` a key it takes. The saved model stays as it is. |
+| In gateway mode every page fails with `the extraction model answered 403`, or the list with 403 | `AGG_GW_AGENT` names an agent the key is not bound to at the gateway. Set the key's agent, or leave it empty, and recreate the server. |
 | A template or model is missing from the gateway's list | The list is what the gateway offers `AGG_GW_KEY`: grant the model to its workspace, or allow the template on the key, at the gateway. |
 | A page is read but finds nothing | **Runs** shows the extraction's message. A heavily scripted page may need a longer `AGG_SCRAPER_PAGE_TIMEOUT_SECONDS`. |
 | The browser is killed | It needs about 700 MB for a heavy page. `docker inspect agg-browser` shows `OOMKilled`. Raise its limit. |
@@ -195,7 +196,7 @@ and the choice applies from the next page read, without a restart.
 | Mode | The call goes to | Variables |
 |---|---|---|
 | Standalone | A provider's own endpoint. | `AGG_LLM_URL`, `AGG_LLM_KEY`, `AGG_LLM_MODEL`, `AGG_LLM_MAX_TOKENS_FIELD` |
-| Gateway | A pacod-gw, which accounts each call. | `AGG_GW_URL`, `AGG_GW_KEY`, `AGG_GW_MODEL` |
+| Gateway | A pacod-gw, which accounts each call. | `AGG_GW_URL`, `AGG_GW_KEY`, `AGG_GW_MODEL`, `AGG_GW_AGENT` |
 
 This is not `docker-compose.standalone.yml`, which decides where the shared components come from.
 Either mode runs on either stack.
@@ -211,6 +212,7 @@ AGG_LLM_MAX_TOKENS_FIELD=max_completion_tokens
 AGG_GW_URL=http://pacod-gw:8080/v1
 AGG_GW_KEY=<a key of that gateway's>
 AGG_GW_MODEL=<the model, as the gateway names it>
+AGG_GW_AGENT=<empty, or the agent that key is bound to>
 ```
 
 Until a mode is chosen, the aggregator uses the gateway if only `AGG_GW_URL` is set, and standalone
@@ -222,6 +224,13 @@ otherwise. **Settings** shows the mode in use, and saving that page stores it.
 | Each key goes only to its own address. | The address and key are paired in the environment. The console picks a pair and sees neither. |
 | A mode never falls back to the other. | That would change who is paid and who sees the pages without anyone choosing it. Pages wait, and **Overview** names the missing variable. |
 | A mode that is not set up can still be chosen. | **Settings** marks it, and **Overview** says what is missing. A variable can disappear after the choice anyway. |
+
+In gateway mode each call tells the gateway what it is for (`x-gw-task: price-extraction`) and the
+run it belongs to (`x-gw-trace`, the run's id), so that its reports group a run's calls.
+`AGG_GW_AGENT`, empty by default, names the agent the calls are made as (`x-gw-agent-id`), on the
+list of models too. Set, it must be the agent the key is bound to at the gateway, which refuses a
+call naming another with 403; a key bound to one agent needs none. Like the key, it is set in the
+environment and never on **Settings**. Standalone mode sends none of these headers.
 
 In gateway mode the model is chosen from a list, which the server asks the gateway for when
 **Settings** opens: `GET /v1/models` at `AGG_GW_URL`, with `AGG_GW_KEY`. It holds what that key may

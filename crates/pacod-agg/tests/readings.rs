@@ -20,16 +20,28 @@ use serde_json::{Value, json};
 const KEY: &str = "a-key-of-the-gateway";
 const PROVIDER_KEY: &str = "a-key-of-a-provider";
 
+/// Headers by name and value, in order of name.
+type Headers = Vec<(String, String)>;
+
 /// The extraction model's endpoint: answers in the order given, and keeps what it was sent.
 #[derive(Clone, Default)]
 struct Llm {
     replies: Arc<Mutex<Vec<(u16, Value)>>>,
     calls: Arc<Mutex<Vec<(Value, String)>>>,
+    /// The headers of each call that name something to a gateway (`x-gw-*`), by name.
+    gateway_headers: Arc<Mutex<Vec<Headers>>>,
 }
 
 async fn completions(State(llm): State<Llm>, headers: HeaderMap, body: String) -> impl IntoResponse {
     let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
     llm.calls.lock().unwrap().push((serde_json::from_str(&body).unwrap(), auth));
+    let mut named: Headers = headers
+        .iter()
+        .filter(|(name, _)| name.as_str().starts_with("x-gw-"))
+        .map(|(name, value)| (name.as_str().to_owned(), value.to_str().unwrap_or_default().to_owned()))
+        .collect();
+    named.sort();
+    llm.gateway_headers.lock().unwrap().push(named);
     let mut replies = llm.replies.lock().unwrap();
     let (status, answer) = if replies.is_empty() { (200, json!({ "models": [] })) } else { replies.remove(0) };
     let content = answer.to_string();
@@ -656,6 +668,64 @@ async fn a_switch_applies_at_the_next_reading_and_each_key_stays_with_its_addres
     let (provider, its_gateway) = (format!("Bearer {PROVIDER_KEY}"), format!("Bearer {KEY}"));
     assert_eq!(seen(&direct), [(reader.clone(), provider.clone()), (reader, provider)]);
     assert_eq!(seen(&gateway), [(routed, its_gateway)]);
+}
+
+/// The `x-gw-*` headers of each call an endpoint was sent.
+fn gateway_headers(llm: &Llm) -> Vec<Headers> {
+    llm.gateway_headers.lock().unwrap().clone()
+}
+
+fn header(name: &str, value: &str) -> (String, String) {
+    (name.to_owned(), value.to_owned())
+}
+
+#[tokio::test]
+async fn a_gateway_is_told_the_task_the_run_and_the_agent_and_a_provider_none_of_them() {
+    let (direct, gateway) = (Llm::default(), Llm::default());
+    let (direct_url, gateway_url) = (direct.url().await, gateway.url().await);
+    let s = Server::start(|c| {
+        c.llm = Some(LlmLink::new(direct_url, Some(PROVIDER_KEY.into())));
+        c.gateway =
+            Some(LlmLink { agent: Some("pacod-aggregator".into()), ..LlmLink::new(gateway_url, Some(KEY.into())) });
+    })
+    .await;
+    s.only_vendor("openai").await;
+    save_setting(&s, "extraction_model", json!("reader")).await;
+    save_setting(&s, "gateway_model", json!("vendor/reader")).await;
+    let first = s.add_page("openai", "https://openai.example/pricing").await;
+    let second = s.add_page("openai", "https://openai.example/models").await;
+
+    let id = run(&s).await;
+    read(&s, &id, changed(&first, "h1")).await;
+    save_setting(&s, "mode", json!("gateway")).await;
+    read(&s, &id, changed(&second, "h2")).await;
+
+    assert_eq!(gateway_headers(&direct), [vec![]], "a provider's endpoint is told nothing of the gateway's");
+    assert_eq!(
+        gateway_headers(&gateway),
+        [vec![
+            header("x-gw-agent-id", "pacod-aggregator"),
+            header("x-gw-task", "price-extraction"),
+            header("x-gw-trace", &id),
+        ]]
+    );
+}
+
+#[tokio::test]
+async fn a_gateway_without_an_agent_is_named_none() {
+    let llm = Llm::default();
+    let url = llm.url().await;
+    let s = Server::start(|c| {
+        c.gateway = Some(LlmLink::new(url, Some(KEY.into())));
+        c.gateway_model = Some("vendor/from-env".into());
+    })
+    .await;
+    s.only_vendor("openai").await;
+    let page = s.add_page("openai", "https://openai.example/pricing").await;
+    let id = run(&s).await;
+    read(&s, &id, changed(&page, "h1")).await;
+    // A key bound to one agent speaks for it unnamed; an unbound key names none.
+    assert_eq!(gateway_headers(&llm), [vec![header("x-gw-task", "price-extraction"), header("x-gw-trace", &id)]]);
 }
 
 #[tokio::test]

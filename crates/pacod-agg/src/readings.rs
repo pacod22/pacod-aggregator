@@ -17,7 +17,7 @@ use pacod_agg_jobs::jobs::JOB_CHECK;
 use serde_json::{Value, json};
 
 use crate::api::{ApiError, ApiResult, AppState};
-use crate::settings::Settings;
+use crate::settings::{Mode, Settings};
 use crate::settle::{Settled, settle_vendor};
 use crate::store::jobs::JobRun;
 use crate::store::pages::{Page, Recording};
@@ -31,6 +31,8 @@ const MIN_CHUNK_CHARS: usize = 8_000;
 const EXTRACTION_OUTPUT_TOKENS: u32 = 16_000;
 /// How long one call of the extraction model may take.
 const EXTRACTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+/// What a gateway records the extraction calls as being for (`x-gw-task`).
+const EXTRACTION_TASK: &str = "price-extraction";
 
 /// Takes the scraper's account of one page of a check run.
 pub async fn reading(st: &AppState, run_id: &str, reading: &PageReading) -> ApiResult<Json<Value>> {
@@ -172,7 +174,7 @@ async fn extract_page(
     let known = st.store.known_model_ids(&page.vendor_id).await.map_err(failed)?.join(", ");
     let mut all = PageExtraction { chunks: chunks.len() as u32, ..Default::default() };
     for (i, chunk) in chunks.iter().enumerate() {
-        let answer = call_extraction(st, settings, &vendor, &known, chunk, (i + 1, chunks.len()))
+        let answer = call_extraction(st, settings, &run.id, &vendor, &known, chunk, (i + 1, chunks.len()))
             .await
             .map_err(Unread::Failed)?;
         let found = models_from_answer(&answer, &page.url);
@@ -316,9 +318,14 @@ fn no_endpoint(st: &AppState, settings: &Settings) -> String {
 /// One call of the extraction model, on its OpenAI-compatible endpoint. The key goes to the
 /// address the operator named with it, and nowhere else. All of a page is read with one snapshot of
 /// the settings, so a switch of the mode during a run applies from the next page.
+///
+/// A gateway is told what the call is for, the run it belongs to, and the agent its key speaks for
+/// where one is set, so that its reports group the calls of a run. A provider's own endpoint is told
+/// none of it.
 async fn call_extraction(
     st: &AppState,
     settings: &Settings,
+    run_id: &str,
     vendor: &str,
     known: &str,
     text: &str,
@@ -336,6 +343,10 @@ async fn call_extraction(
     let mut request = st.http.post(format!("{}/chat/completions", link.url)).timeout(EXTRACTION_TIMEOUT).json(&body);
     if let Some(key) = &link.key {
         request = request.bearer_auth(key);
+    }
+    if st.config.mode(settings) == Mode::Gateway {
+        request = request.header("x-gw-task", EXTRACTION_TASK).header("x-gw-trace", run_id);
+        request = crate::gateway::as_agent(request, link);
     }
     let response = request.send().await.map_err(|e| format!("the extraction model could not be reached: {e}"))?;
     let status = response.status();

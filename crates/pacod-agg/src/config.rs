@@ -15,6 +15,8 @@ use crate::settings::{Mode, Settings};
 const MIN_DEV_TOKEN: usize = 32;
 /// A shorter internal token is refused.
 const MIN_INTERNAL_TOKEN: usize = 16;
+/// The longest agent pacod-gw takes in `x-gw-agent-id`.
+const MAX_AGENT: usize = 200;
 
 /// Every variable the server reads, for the check that `deploy/.env.example` names them all.
 pub const VARIABLES: &[&str] = &[
@@ -39,6 +41,7 @@ pub const VARIABLES: &[&str] = &[
     "AGG_GW_URL",
     "AGG_GW_KEY",
     "AGG_GW_MODEL",
+    "AGG_GW_AGENT",
     "AGG_EGRESS_ALLOW_PRIVATE",
     "AGG_LOG_FORMAT",
 ];
@@ -139,11 +142,15 @@ pub struct LlmLink {
     /// What the endpoint calls the limit on an answer's length. A gateway translates it for each
     /// provider; called directly, a provider takes its own name for it or refuses the call.
     pub limit_field: &'static str,
+    /// The agent the calls are made as, in `x-gw-agent-id`: the gateway's link only. It is the
+    /// agent the key is bound to at the gateway, or none, because a gateway refuses a key's call that
+    /// names another agent; a key bound to one agent needs none.
+    pub agent: Option<String>,
 }
 
 impl LlmLink {
     pub fn new(url: String, key: Option<String>) -> Self {
-        Self { url, key, limit_field: DEFAULT_LIMIT_FIELD }
+        Self { url, key, limit_field: DEFAULT_LIMIT_FIELD, agent: None }
     }
 }
 
@@ -180,6 +187,16 @@ fn limit_field(env: Env) -> anyhow::Result<&'static str> {
         Some("max_completion_tokens") => Ok("max_completion_tokens"),
         Some(other) => bail!("AGG_LLM_MAX_TOKENS_FIELD must be max_tokens or max_completion_tokens, not {other:?}"),
     }
+}
+
+/// `AGG_GW_AGENT`, which goes into a header as it is written.
+fn gateway_agent(env: Env) -> anyhow::Result<Option<String>> {
+    let Some(agent) = set(env, "AGG_GW_AGENT") else { return Ok(None) };
+    ensure!(
+        agent.len() <= MAX_AGENT && agent.bytes().all(|b| b.is_ascii_graphic()),
+        "AGG_GW_AGENT: {agent:?} is not an agent's name: at most {MAX_AGENT} visible characters, without spaces"
+    );
+    Ok(Some(agent))
 }
 
 fn id_settings(env: Env) -> anyhow::Result<IdSettings> {
@@ -222,17 +239,22 @@ impl Config {
         }
         // Read whether or not there is an address: a mistyped name stops the start either way.
         let limit_field = limit_field(env)?;
+        let agent = gateway_agent(env)?;
         let llm = match set(env, "AGG_LLM_URL") {
             None => None,
-            Some(url) => {
-                Some(LlmLink { url: check_url("AGG_LLM_URL", &url)?, key: secret(env, "AGG_LLM_KEY")?, limit_field })
-            }
+            Some(url) => Some(LlmLink {
+                limit_field,
+                ..LlmLink::new(check_url("AGG_LLM_URL", &url)?, secret(env, "AGG_LLM_KEY")?)
+            }),
         };
         // Always the usual name: a gateway translates it for each provider, so the name a provider
-        // asks for in AGG_LLM_MAX_TOKENS_FIELD does not apply here.
+        // asks for in AGG_LLM_MAX_TOKENS_FIELD does not apply here. The agent is the gateway's
+        // alone: a provider's endpoint is told nothing of it.
         let gateway = match set(env, "AGG_GW_URL") {
             None => None,
-            Some(url) => Some(LlmLink::new(check_url("AGG_GW_URL", &url)?, secret(env, "AGG_GW_KEY")?)),
+            Some(url) => {
+                Some(LlmLink { agent, ..LlmLink::new(check_url("AGG_GW_URL", &url)?, secret(env, "AGG_GW_KEY")?) })
+            }
         };
         let metrics_listen = match set(env, "AGG_METRICS_LISTEN").as_deref() {
             Some("off") => None,
@@ -345,6 +367,8 @@ mod tests {
             ("AGG_LLM_MAX_TOKENS_FIELD", "max_output_tokens"),
             ("AGG_GW_URL", "ftp://example.com"),
             ("AGG_GW_URL", "https://user:secret@example.com"),
+            ("AGG_GW_AGENT", "two words"),
+            ("AGG_GW_AGENT", "agent\u{7f}"),
         ] {
             assert!(with(&[bad]).is_err(), "{bad:?}");
         }
@@ -397,6 +421,19 @@ mod tests {
         assert_eq!(gateway.key.as_deref(), Some("the-gateways-key"));
         // The gateway translates the limit; the name a provider asks for is not for it.
         assert_eq!((direct.limit_field, gateway.limit_field), ("max_completion_tokens", "max_tokens"));
+    }
+
+    #[test]
+    fn the_agent_goes_with_the_gateway_alone_and_is_none_by_default() {
+        let agent = ("AGG_GW_AGENT", "pacod-aggregator");
+        let c = with(&[DIRECT, GATEWAY, agent]).unwrap();
+        assert_eq!(c.gateway.unwrap().agent.as_deref(), Some("pacod-aggregator"));
+        assert_eq!(c.llm.unwrap().agent, None, "a provider is never told the gateway's agent");
+        assert_eq!(with(&[GATEWAY]).unwrap().gateway.unwrap().agent, None);
+        assert_eq!(with(&[GATEWAY, ("AGG_GW_AGENT", " ")]).unwrap().gateway.unwrap().agent, None);
+        let named = |agent: &str| config(&[BASE, &[GATEWAY, ("AGG_GW_AGENT", agent)]].concat());
+        assert!(named(&"a".repeat(MAX_AGENT)).is_ok());
+        assert!(named(&"a".repeat(MAX_AGENT + 1)).is_err());
     }
 
     #[test]

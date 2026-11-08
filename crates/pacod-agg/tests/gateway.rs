@@ -16,22 +16,26 @@ use serde_json::{Value, json};
 const GATEWAY_KEY: &str = "a-key-of-the-gateway";
 const PROVIDER_KEY: &str = "a-key-of-a-provider";
 
-/// A gateway's `GET /v1/models`: answers as told, and keeps the credential of each call.
+/// A gateway's `GET /v1/models`: answers as told, and keeps the credential and the agent of each
+/// call.
 #[derive(Clone)]
 struct Gateway {
     answer: Arc<(u16, Value)>,
     seen: Arc<Mutex<Vec<String>>>,
+    agents: Arc<Mutex<Vec<Option<String>>>>,
 }
 
 async fn models(State(g): State<Gateway>, headers: HeaderMap) -> (StatusCode, axum::Json<Value>) {
     let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
     g.seen.lock().unwrap().push(auth);
+    let agent = headers.get("x-gw-agent-id").and_then(|v| v.to_str().ok()).map(str::to_owned);
+    g.agents.lock().unwrap().push(agent);
     (StatusCode::from_u16(g.answer.0).unwrap(), axum::Json(g.answer.1.clone()))
 }
 
 impl Gateway {
     async fn start(status: u16, answer: Value) -> (Gateway, String) {
-        let g = Gateway { answer: Arc::new((status, answer)), seen: Arc::default() };
+        let g = Gateway { answer: Arc::new((status, answer)), seen: Arc::default(), agents: Arc::default() };
         let app = Router::new().route("/v1/models", get(models)).with_state(g.clone());
         (g, format!("{}/v1", serve(app).await))
     }
@@ -74,6 +78,19 @@ async fn the_gateways_models_and_templates_are_listed_templates_first() {
     );
     // The gateway's own key, and only that: the provider's never goes to the gateway.
     assert_eq!(*gateway.seen.lock().unwrap(), [format!("Bearer {GATEWAY_KEY}")]);
+    assert_eq!(*gateway.agents.lock().unwrap(), [None], "no agent is set, so none is named");
+}
+
+#[tokio::test]
+async fn the_list_is_asked_as_the_agent_where_one_is_set() {
+    let (gateway, url) = Gateway::start(200, listed()).await;
+    let s = Server::start(|c| {
+        c.gateway =
+            Some(LlmLink { agent: Some("pacod-aggregator".into()), ..LlmLink::new(url, Some(GATEWAY_KEY.into())) });
+    })
+    .await;
+    assert_eq!(s.api("GET", "/gateway/models", None).await.0, 200);
+    assert_eq!(*gateway.agents.lock().unwrap(), [Some(String::from("pacod-aggregator"))]);
 }
 
 #[tokio::test]

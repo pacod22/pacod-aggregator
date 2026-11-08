@@ -46,6 +46,7 @@ services:
       AGG_GW_URL: http://agg-mock:9100/v1
       AGG_GW_KEY: ""
       AGG_GW_MODEL: mock/reader
+      AGG_GW_AGENT: ""
       AGG_EGRESS_ALLOW_PRIVATE: agg-mock
     ports:
       - "127.0.0.1:18150:8150"

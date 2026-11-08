@@ -81,6 +81,7 @@ services:
       AGG_GW_URL: ${AGG_GW_URL:-}
       AGG_GW_KEY: ${AGG_GW_KEY:-}
       AGG_GW_MODEL: ${AGG_GW_MODEL:-}
+      AGG_GW_AGENT: ${AGG_GW_AGENT:-}
       AGG_EGRESS_ALLOW_PRIVATE: ${AGG_EGRESS_ALLOW_PRIVATE:-}
       AGG_LOG_FORMAT: ${AGG_LOG_FORMAT:-json}
       RUST_LOG: ${RUST_LOG:-info}

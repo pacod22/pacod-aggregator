@@ -26,8 +26,10 @@ mode has its own model, the one named in the console or else the operator's `AGG
 `AGG_GW_MODEL`. The endpoints and keys are the operator's alone, in the environment. The console
 picks one of the two pairs, sees neither, and a mode without its endpoint waits instead of using the
 other. In gateway mode the console chooses the model from the gateway's list of what its key may
-call, which the server asks for on its behalf (`GET /api/v1/gateway/models`). pacod-gw is one choice
-of endpoint, not a dependency.
+call, which the server asks for on its behalf (`GET /api/v1/gateway/models`). Each call to a gateway
+names its task (`price-extraction`) and its run, and the agent its key is bound to where
+`AGG_GW_AGENT` is set; a provider's endpoint is told none of this. pacod-gw is one choice of
+endpoint, not a dependency.
 
 ```text
 vendor sites <-- proxy (in agg-scraper) <-- agg-browser

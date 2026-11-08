@@ -1,8 +1,8 @@
 //! What the gateway of gateway mode offers the aggregator: the models and templates its key may put
 //! into `model`, for the console to choose the extraction model from. They come from pacod-gw's
 //! `GET /v1/models`, asked with `AGG_GW_KEY` at `AGG_GW_URL` and nowhere else, as a page reading
-//! is. The answer holds names only, never the address or the key, because everyone who may read the
-//! console sees it.
+//! is, and as the agent `AGG_GW_AGENT` names where it is set. The answer holds names only, never the
+//! address or the key, because everyone who may read the console sees it.
 
 use std::time::Duration;
 
@@ -12,6 +12,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::api::{ApiError, ApiResult, AppState};
+use crate::config::LlmLink;
 
 /// How long the list may take: the settings page waits for it, and a list answers at once.
 const LIST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -63,8 +64,10 @@ pub async fn offers(st: &AppState) -> ApiResult<GatewayOffers> {
     if let Some(key) = &link.key {
         request = request.bearer_auth(key);
     }
-    let response =
-        request.send().await.map_err(|e| failed(format!("the gateway could not be reached: {}", words(e))))?;
+    let response = as_agent(request, link)
+        .send()
+        .await
+        .map_err(|e| failed(format!("the gateway could not be reached: {}", words(e))))?;
     let status = response.status();
     let answer: Value = response.json().await.unwrap_or(Value::Null);
     if !status.is_success() {
@@ -77,6 +80,15 @@ pub async fn offers(st: &AppState) -> ApiResult<GatewayOffers> {
     models.sort_by(|a, b| (a.kind, &a.id).cmp(&(b.kind, &b.id)));
     models.dedup_by(|a, b| a.id == b.id);
     Ok(GatewayOffers { models })
+}
+
+/// A call to the gateway as the agent its key speaks for, where one is set. The list of models is
+/// asked as that agent too: a gateway narrows a key to what its agent may call.
+pub fn as_agent(request: reqwest::RequestBuilder, link: &LlmLink) -> reqwest::RequestBuilder {
+    match &link.agent {
+        Some(agent) => request.header("x-gw-agent-id", agent),
+        None => request,
+    }
 }
 
 /// One entry of an OpenAI-shaped model list. pacod-gw adds `gateway`, with the kind and the
